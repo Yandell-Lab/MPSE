@@ -1,0 +1,110 @@
+#---- RADY_HPO_ALL_ADMITS_EXP ----#
+# /scratch/ucgd/lustre-work/yandell/u1323262/MPSE/rady_data/RADY_HPO_ALL_ADMITS_EXP/
+
+834 total files
+825 patient CSV files
+9 supplementary files
+
+SUPPLEMENTARY FILES:
+1. bar
+2. crap
+3. CT_HPO_Manifest_Expanded_De_Identified.txt
+	- Plain text version of Excel file
+	- Fields: CT_HPO_FileID, Discharge_Date, Unit, Repeat_RCHSD_NICU_cases, GENDER, RACE, ETHNICITY, Approximate age at admission (days rounded to 5), Accessioned_for_RCIGM_Sequencing, ResearchID
+	- 826 total lines including header 
+4. CT_HPO_Manifest_Expanded_De_Identified .xlsx
+	- Should be exact same content as "CT_HPO_Manifest_Expanded_De_Identified.xlsx" because the line, word, and character counts are identical
+5. CT_HPO_Manifest_Expanded_De_Identified.xlsx
+	- Tabular patient data
+6. DNAnexus_export_urls-20200518-124659.txt
+	- List of file source URLs
+7. foo
+8. UtahRady_Controls_Manifest_De_Identified.txt
+	- Plain text version of Excel file
+	- Research subject metadata
+	- Fields: CT_HPO_FileID, Discharge_Date, Repeat_Admission_Controls, RCIGM_Sequencing_Initiated, Sequence_Group_ResearchID
+9. UtahRady_Controls_Manifest_De_Identified.xlsx
+	- See plain text version
+
+
+PATIENT CSV FILES:
+File names follow the pattern "UR20NNN_XXXXXXXXXX" where NNN is 001-825 and X is a digit 0-9.
+All numbers from 001 to 825 are used.
+The "UR20NNN" is unique for each of the 825 files.
+The sequence of 10 X are also unique for each of the 825 files.
+
+
+
+
+
+
+#---- RADY_HPO_ALL_ADMITS ----#
+# /scratch/ucgd/lustre-work/yandell/u1323262/MPSE/rady_data/RADY_HPO_ALL_ADMITS/
+
+160 total files
+154 patient CSV files
+6 supplementary files
+
+SUPPLEMENTARY FILES:
+1. Control_Manifest_DeIdentified.xlsx
+	- Fields: date, unit, ResearchID
+2. Copy of RCIGM_Control_Overlap_and_Repeats.xlsx
+	- Research subject metadata
+3. crap
+	- Empty file
+4. DNAnexus_export_urls-20200504-072456.txt
+	- List of file source URLs
+5. DNAnexus_export_urls-20200504-072456.txt.sb-3843616c-pxTBML
+	- List of file source URLs
+6. RCIGM_Control_Overlap_and_Repeats.txt
+	- Plain text version of Excel file
+	- Fields: Individual, End date of MRN extraction, Unit, ResearchID, Notes
+
+
+PATIENT CSV FILES:
+File names follow the pattern "URCNNN_XXXXXXXXXX" where NNN is 001-154 and X is a digit 0-9.
+All numbers from 001 to 154 are used.
+The "URCNNN" is unique for each of the 154 files.
+The sequence of 10 X are also unique for each of the 154 files.
+
+
+
+
+
+
+#---- RADY_HPO_SEQ_ADMITS ----#
+# /scratch/ucgd/lustre-work/yandell/u1323262/MPSE/rady_data/RADY_HPO_SEQ_ADMITS/
+
+299 total files
+294 patient CSV files
+5 supplementary files
+
+SUPPLEMENTARY FILES:
+1. crap
+	- Mark's combined data in FASTA format. Test run output?
+2. DNAnexus_export_urls-20200504-035001.txt
+	- List of file source URLs
+3. foo
+	- Mark's combined data in multi-FASTA format
+	- contains FASTA entry for each of 294 patient CSV files
+	- header contains RID (ResearchID), NAME, AGE
+4. Utah_Rady_CT_HPO_Manifest_16APR2020_DeIdentified.txt
+	- Plain text version of Excel file.
+	- Fields: ResearchID, Manual_HPO, Age, Positive, Negative, VUS, Incidental, formal_site_name
+	- 305 total lines
+	- There are 5 empty lines at the end of file. Last line does not have newline character.
+	- ResearchID col contains "URNNN" where NNN is 001-300. Each num 001 to 300 is represented.
+	- There is only one row for UR001 even though there are two CSV files for this patient.
+	- There are multiple rows that do not have a corresponding patient CSV file.
+5. Utah_Rady_CT_HPO_Manifest_16APR2020_DeIdentified.xlsx
+	- Tabular patient data.
+
+
+PATIENT CSV FILES:
+File names follow the pattern "URNNN_XXXXXXXXXX" where NNN is 001-300 and X is a digit 0-9.
+Not all numbers from 001 to 300 are used.
+The "URNNN" is NOT unique for all 294 files. There are two files with identical URNNN & identical content:
+UR001_1587053901.csv
+UR001_1587060330.csv
+The sequence of 10 X are unique for each of the 294 files.
+
