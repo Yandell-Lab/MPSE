@@ -17,7 +17,7 @@ ls ../../rady_data/RADY_HPO_SEQ_ADMITS/*.csv | \
 paste -d, seq_file_list seq_hpo_list > seq_combined_list.csv
 
 # add header row
-sed -i 1i"ResearchID,file_tag,CliniThink_HPO" seq_combined_list.csv
+sed -i 1i"ResearchID,seq_file_tag,seq_CliniThink_HPO" seq_combined_list.csv
 
 # make output directory
 mkdir data_views
@@ -29,8 +29,7 @@ in2csv -f csv ../../rady_data/RADY_HPO_SEQ_ADMITS/Utah_Rady_CT_HPO_Manifest_16AP
 # join the CliniThink term list to the patient data file
 # Manual_HPO must be removed because it contains "," and screws up formatting
 csvjoin -c ResearchID --outer data_views/Utah_Rady_CT_HPO_Manifest_16APR2020_DeIdentified.csv seq_combined_list.csv | \
-	csvcut -C Manual_HPO > data_views/rady_hpo_seq_admits_combined.csv
-#csvcut -c ResearchID,file_tag,Age,Positive,Negative,Incidental,CliniThink_HPO > data_views/rady_hpo_seq_admits_combined.csv
+	csvcut -C Manual_HPO,ResearchID2 > data_views/rady_hpo_seq_admits_combined.csv
 
 # recode years as days
 grep years data_views/rady_hpo_seq_admits_combined.csv | sed -re 's/ years//' | awk -F, -v OFS=, '$2*=365' > years2days
@@ -52,7 +51,7 @@ rm seq_file_list seq_hpo_list seq_combined_list.csv years2days just_days all_age
 
 # subset unique CliniThink term sets
 sed "2d" data_views/rady_hpo_seq_admits_combined.csv | \
-	csvgrep -c CliniThink_HPO -r "^$" -i > data_views/rady_hpo_seq_admits_CliniThink.csv
+	csvgrep -c seq_CliniThink_HPO -r "^$" -i > data_views/rady_hpo_seq_admits_CliniThink.csv
 
 # subset Positive Dx
 csvgrep -c Positive -m "False" -i data_views/rady_hpo_seq_admits_combined.csv > data_views/rady_hpo_seq_admits_PositiveDx.csv
