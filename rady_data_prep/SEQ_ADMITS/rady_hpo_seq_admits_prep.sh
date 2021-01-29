@@ -34,8 +34,8 @@ csvjoin -c ResearchID --outer data_views/Utah_Rady_CT_HPO_Manifest_16APR2020_DeI
 # recode years as days
 grep years data_views/rady_hpo_seq_admits_combined.csv | sed -re 's/ years//' | awk -F, -v OFS=, '$2*=365' > years2days
 
-csvgrep -c Age -m 'days' data_views/rady_hpo_seq_admits_combined.csv | \
-	sed -re 's/ days//' > just_days
+csvgrep -c Age -m 'years' -i data_views/rady_hpo_seq_admits_combined.csv | \
+	sed -re 's/ days//;s/Misisng DoB//' > just_days
 
 cat just_days years2days > all_ages
 
