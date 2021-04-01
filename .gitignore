@@ -1,4 +1,11 @@
 rady_data/
+
 rady_data_prep/ALL_ADMITS_EXP/data_views/
 rady_data_prep/SEQ_ADMITS/data_views/
 rady_data_prep/rady_hpo_all_seq_joined.csv
+rady_data_prep/RADY_HPO_*
+
+analysis/prelim_plots/
+analysis/test*
+analysis/bar
+analysis/zar
