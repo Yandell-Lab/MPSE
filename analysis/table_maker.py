@@ -12,18 +12,6 @@ from scipy.special import bdtr
 from pyhpo.ontology import Ontology
 
 
-os.chdir("/scratch/ucgd/lustre-work/yandell/u1323262/MPSE")
-
-parser = argparse.ArgumentParser()
-parser.add_argument('-d', '--data', action='store', required=True,
-		help='CSV file containing data for targets and background.')
-#parser.add_argument('-o', '--ontology', action='store',
-#		help='HPO file.')
-#parser.add_argument('-r', '--replicate', action='store', default=1,
-#		help='Replicate data -r times.')
-args = parser.parse_args()
-
-
 def reader(ftag):
 	with open(ftag, 'r') as f:
 		dat = pd.read_csv(f, dtype={
@@ -38,17 +26,17 @@ def grp_count(dat, col_name):
 	return tgrp, bgrp
 
 def hpo_regex(string):
-	hpo_reg = re.compile(r'hp\d{7}')
+	hpo_reg = re.compile(r'HP:\d{7}')
 	return hpo_reg.findall(string)
 
 def counter(dat, col_name, grp):
 	if grp == "t":
 		sub = dat.loc[dat[col_name].notnull()]
-		sub["hpo_format"] = sub["seq_CliniThink_HPO"].apply(hpo_regex)
+		sub["hpo_format"] = sub["seq_HPO_clean"].apply(hpo_regex)
 		lst = sub["hpo_format"].tolist()
 	else:
 		sub = dat.loc[dat[col_name].isnull()]
-		sub["hpo_format"] = sub["all_CliniThink_HPO"].apply(hpo_regex)
+		sub["hpo_format"] = sub["all_HPO_clean"].apply(hpo_regex)
 		lst = sub["hpo_format"].tolist()
 	cnt = Counter([item for sublst in lst for item in sublst])
 	return cnt
@@ -60,34 +48,39 @@ def printer(dat, count, tn, bn):
 	print('\t'.join(["#", "NUM_T", str(tn)]))
 
 	def get_line(line):
-		if str(line["seq_CliniThink_HPO"]) != "nan":
+		if str(line["seq_HPO_clean"]) != "nan":
 			grp = "t"
 			fid = line["seq_fid"]
-			cnt = len(hpo_regex(line["seq_CliniThink_HPO"]))
+			cnt = len(hpo_regex(line["seq_HPO_clean"]))
 			age = line["Age"]
 		else:
 			grp = "b"
 			fid = line["all_fid"]
-			cnt = len(hpo_regex(line["all_CliniThink_HPO"]))
+			cnt = len(hpo_regex(line["all_HPO_clean"]))
 			age = line["Age5d"]
 		msg = "\t".join(["#", "CNT", grp, str(fid), str(cnt), str(age)])
 		print(msg)
 
 	keep = ["all_fid","seq_fid",
 			"Age5d","Age",
-			"all_CliniThink_HPO","seq_CliniThink_HPO"]
+			"all_HPO_clean","seq_HPO_clean"]
 
 	dat[keep].apply(get_line, axis=1)
 
 
-
-
 def main():
-	df = reader(args.data)
-	tn, bn = grp_count(df, "seq_CliniThink_HPO")
+	os.chdir("/scratch/ucgd/lustre-work/yandell/u1323262/MPSE")
+	
+	parser = argparse.ArgumentParser()
+	parser.add_argument('-d', '--data', action='store', required=True,
+			help='CSV file containing data for targets and background.')
+	args = parser.parse_args()
 
-	tcnt = counter(df, "seq_CliniThink_HPO", "t")
-	bcnt = counter(df, "seq_CliniThink_HPO", "b")
+	df = reader(args.data)
+	tn, bn = grp_count(df, "seq_HPO_clean")
+
+	tcnt = counter(df, "seq_HPO_clean", "t")
+	bcnt = counter(df, "seq_HPO_clean", "b")
 	cnts = pd.DataFrame({
 		"tcnt":pd.Series(tcnt), 
 		"bcnt":pd.Series(bcnt)
@@ -105,7 +98,6 @@ def main():
 
 	cnts.reset_index(inplace=True)
 	cnts.rename(columns={"index":"term"}, inplace=True)
-	cnts["term"] = cnts["term"].str.replace("hp", "HP:")
 	
 	_ = Ontology()
 	cnts["name"] = cnts.apply(
@@ -115,7 +107,6 @@ def main():
 
 	order_cnts = cnts[["tcnt","bcnt","binom","up","term","name"]]
 	printer(df, order_cnts, tn, bn)
-
 
 
 if __name__ == '__main__':

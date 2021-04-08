@@ -46,15 +46,16 @@ rm all_file_list all_hpo_list all_combined_list.csv
 csvgrep -c Repeat_cases -r "^$" -i data_views/rady_hpo_all_admits_combined.csv > data_views/rady_hpo_all_admits_repeat_cases.csv
 
 # subset accessioned for sequencing
-csvgrep -c Accession_for_Seq -r "^$" -i data_views/rady_hpo_all_admits_combined.csv > data_views/rady_hpo_all_admits_accessioned.csv
+#csvgrep -c Accession_for_Seq -r "^$" -i data_views/rady_hpo_all_admits_combined.csv > data_views/rady_hpo_all_admits_accessioned.csv
 
 # subset those not accessioned for sequencing
-csvgrep -c Accession_for_Seq -r "^$" data_views/rady_hpo_all_admits_combined.csv > data_views/rady_hpo_all_admits_not_accessioned.csv
+#csvgrep -c Accession_for_Seq -r "^$" data_views/rady_hpo_all_admits_combined.csv > data_views/rady_hpo_all_admits_not_accessioned.csv
 
 # remove all duplicate patient rows - keep most recent admit
 csvsort -c Repeat_cases,Discharge_Date -r data_views/rady_hpo_all_admits_repeat_cases.csv | \
 	uniq -s29 -w2 > remove_dup
 csvgrep -c Repeat_cases -r "^$" data_views/rady_hpo_all_admits_combined.csv > no_repeat
 csvstack remove_dup no_repeat | \
-	csvsort -c CT_HPO_FileID > data_views/rady_hpo_all_admits_remove_repeats.csv
+	csvsort -c CT_HPO_FileID | \
+	awk 'BEGIN{OFS=","}{printf("%s,%s", $0, NR>1?NR-2 RS:"all_fid" RS)}' > data_views/rady_hpo_all_admits_remove_repeats.csv
 rm remove_dup no_repeat

@@ -51,16 +51,18 @@ rm seq_file_list seq_hpo_list seq_combined_list.csv years2days just_days all_age
 
 # subset unique CliniThink term sets
 sed "2d" data_views/rady_hpo_seq_admits_combined.csv | \
-	csvgrep -c seq_CliniThink_HPO -r "^$" -i > data_views/rady_hpo_seq_admits_CliniThink.csv
+	csvgrep -c seq_CliniThink_HPO -r "^$" -i | \
+	awk 'BEGIN{OFS=","}{printf("%s,%s", $0, NR>1?NR-2 RS:"seq_fid" RS)}' | \
+	awk -F ',' -v OFS=',' '$2 == "" {$2 = "5"}1' > data_views/rady_hpo_seq_admits_CliniThink.csv
 
 # subset Positive Dx
-csvgrep -c Positive -m "False" -i data_views/rady_hpo_seq_admits_combined.csv > data_views/rady_hpo_seq_admits_PositiveDx.csv
+#csvgrep -c Positive -m "False" -i data_views/rady_hpo_seq_admits_combined.csv > data_views/rady_hpo_seq_admits_PositiveDx.csv
 
 # subset Negative Dx
-csvgrep -c Negative -m "False" -i data_views/rady_hpo_seq_admits_combined.csv > data_views/rady_hpo_seq_admits_NegativeDx.csv
+#csvgrep -c Negative -m "False" -i data_views/rady_hpo_seq_admits_combined.csv > data_views/rady_hpo_seq_admits_NegativeDx.csv
 
 # subset VUS
-csvgrep -c VUS -m "False" -i data_views/rady_hpo_seq_admits_combined.csv > data_views/rady_hpo_seq_admits_VUS.csv
+#csvgrep -c VUS -m "False" -i data_views/rady_hpo_seq_admits_combined.csv > data_views/rady_hpo_seq_admits_VUS.csv
 
 # subset Incidental
-csvgrep -c Incidental -m "False" -i data_views/rady_hpo_seq_admits_combined.csv > data_views/rady_hpo_seq_admits_Incidental.csv
+#csvgrep -c Incidental -m "False" -i data_views/rady_hpo_seq_admits_combined.csv > data_views/rady_hpo_seq_admits_Incidental.csv
