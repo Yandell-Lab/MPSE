@@ -80,8 +80,8 @@ predictions = cross_val_predict(clf, X, y, cv=loo, method="predict_proba", n_job
 # join probabilities with positive diagnosis indicator
 pred_df = pd.DataFrame(predictions, columns=["neg_proba", "pos_proba"]).join(df[["pid", "Positive", "outcome"]])
 # calculate log-probabilities and create rank indicator
-pred_df["pos_score"] = -np.log(pred_df["pos_proba"])
-pred_df["pos_rank"] = pred_df["pos_score"].rank(method="first").astype("int32")
+pred_df["neg_score"] = -np.log(pred_df["neg_proba"])
+pred_df["score_rank"] = pred_df["neg_score"].rank(method="first", ascending=False).astype("int32")
 
 # plot kernel density of log-probabilities
 #dist_plot = sns.kdeplot(pred_df["pos_score"], bw_adjust=0.5)
