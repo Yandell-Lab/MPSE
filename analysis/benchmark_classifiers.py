@@ -57,14 +57,14 @@ loo = LeaveOneOut()
 
 # Bernoulli naive bayes model
 clf = BernoulliNB()
-scores = cross_validate(clf, X, y, 
-        cv=loo,
-        scoring=["accuracy"],#,"roc_auc"],
-        return_train_score=True,
-        n_jobs=args.processors)
-
-print("Average model accuracy across validation sets")
-print(scores["test_accuracy"].mean())
+#scores = cross_validate(clf, X, y, 
+#        cv=loo,
+#        scoring=["accuracy"],#,"roc_auc"],
+#        return_train_score=True,
+#        n_jobs=args.processors)
+#
+#print("Average model accuracy across validation sets")
+#print(scores["test_accuracy"].mean())
 
 # generate class probabilities predictions
 predictions = cross_val_predict(clf, X, y, cv=loo, method="predict_proba", n_jobs=args.processors)
@@ -88,5 +88,25 @@ pred_df["score_rank"] = pred_df["neg_score"].rank(method="first", ascending=Fals
 #plt.savefig("pred_log_proba_kde.png")
 #plt.clf()
 
-#print(pred_df)
+# split into sequenced and non-sequenced subgroups for sampling
+pos_samples = pred_df.loc[pred_df["Positive"]==1,]
+neg_samples = pred_df.loc[pred_df["Positive"]==0,]
 
+# sample from non-sequenced subgroup to give 18% overall diagnostic rate
+diag_rate_sample = pos_samples.merge(neg_samples.sample(n=388, random_state=42), how="outer", on=None)
+# re-calculate ranks as a result of sampling
+diag_rate_sample["score_rank"] = diag_rate_sample["neg_score"].rank(method="first", ascending=False).astype("int32")
+# cumulative sum of positive diagnoses across the rank list
+diag_rate_sample["rank_cumsum"] = diag_rate_sample.sort_values(by=["score_rank"])["Positive"].cumsum()
+
+# compute diagnostic rate and rank percentile
+diag_rate_sample["diag_rate"] = diag_rate_sample["rank_cumsum"] / diag_rate_sample["score_rank"]
+diag_rate_sample["list_fraction"] = diag_rate_sample["score_rank"] / diag_rate_sample.shape[0]
+
+
+pred_df.to_csv("bernoulli_nb_predictions.csv")
+diag_rate_sample.to_csv("bernoulli_nb_diagnostic_rate.csv")
+
+#line_plot = sns.lineplot(data=diag_rate_sample, x="list_fraction", y="diag_rate")
+#plt.savefig("diagnostic_rate_lineplot.png")
+#plt.clf()
