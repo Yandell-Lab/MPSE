@@ -10,3 +10,5 @@ analysis/test*
 analysis/bar
 analysis/zar
 analysis/foo*
+analysis/*.png
+analysis/*.csv

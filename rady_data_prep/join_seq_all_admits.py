@@ -9,12 +9,10 @@ from pyhpo.set import HPOSet
 
 
 all_f = "ALL_ADMITS_EXP/data_views/rady_hpo_all_admits_remove_repeats.csv"
-with open(all_f, "r") as f:
-	all_df = pd.read_csv(f)
+all_df = pd.read_csv(all_f)
 
 seq_f = "SEQ_ADMITS/data_views/rady_hpo_seq_admits_CliniThink.csv"
-with open(seq_f, "r") as f:
-	seq_df = pd.read_csv(f)
+seq_df = pd.read_csv(seq_f)
 
 def hpo_parse(hpo_str):
 	hpo_reg = re.compile(r'hp\d{7}')

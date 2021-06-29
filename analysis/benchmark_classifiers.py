@@ -19,12 +19,15 @@ from sklearn import metrics
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument("-d", "--data", action="store", required=True)
+parser.add_argument("-d", "--data", action="store", 
+        default="/home/bennet/Documents/PhD/Yandell/software/MPSE/rady_data_prep/rady_hpo_all_seq_joined.csv")
+parser.add_argument("-n", "--neoseq", action="store",
+        default="/scratch/ucgd/lustre-work/yandell/u1323262/MPSE/edw_data/NeoSeq_validation_cases.csv")
 parser.add_argument("-p", "--processors", action="store", default=8)
 args = parser.parse_args()
 
-raw = pd.read_csv(args.data,
-        dtype={"Positive": np.int32})
+raw = pd.read_csv(args.data, dtype={"Positive": np.int32})
+neo = pd.read_csv(args.neoseq)
 
 bcols = {
         "CT_HPO_FileID": "pid", 
