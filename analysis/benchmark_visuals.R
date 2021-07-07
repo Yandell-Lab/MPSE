@@ -22,3 +22,9 @@ line_plot <- ggplot(dr, aes(x=list_fraction, y=diag_rate)) +
 	geom_vline(xintercept=0.21, alpha=0.3, size=1) + 
   theme_bw()
 
+
+
+rady <- read_csv("analysis/bernoulli_nb_predictions.csv")
+neo <- read_delim("analysis/neoseq_predict_proba.txt", col_names=c("scr"))
+
+dens_plot <- ggplot()

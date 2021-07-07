@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
 import sys
-from time import time
-import logging
+#from time import time
+#import logging
 import argparse
 import numpy as np
 import pandas as pd
@@ -20,14 +20,14 @@ from sklearn import metrics
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-d", "--data", action="store", 
-        default="/home/bennet/Documents/PhD/Yandell/software/MPSE/rady_data_prep/rady_hpo_all_seq_joined.csv")
+        default="/scratch/ucgd/lustre-work/yandell/u1323262/MPSE/rady_data_prep/rady_hpo_all_seq_joined.csv")
 parser.add_argument("-n", "--neoseq", action="store",
-        default="/scratch/ucgd/lustre-work/yandell/u1323262/MPSE/edw_data/NeoSeq_validation_cases.csv")
+        default="/scratch/ucgd/lustre-work/yandell/u1323262/MPSE/edw_data/EDW_NeoSeq_validation_cases.csv")
 parser.add_argument("-p", "--processors", action="store", default=8)
 args = parser.parse_args()
 
 raw = pd.read_csv(args.data, dtype={"Positive": np.int32})
-neo = pd.read_csv(args.neoseq)
+neo = pd.read_csv(args.neoseq, dtype={"diagnostic": np.int32}, nrows=9)
 
 bcols = {
         "CT_HPO_FileID": "pid", 
@@ -51,9 +51,29 @@ t_onehot["outcome"] = 1
 # recombine background & target data
 df = b_onehot.merge(t_onehot, how="outer", on=None).fillna(0, downcast="infer")
 
-y = df["outcome"].to_numpy()
-terms = df.columns[pd.Series(df.columns).str.startswith("HP:")]
-X = df[terms].to_numpy()
+df_terms = df.columns[pd.Series(df.columns).str.startswith("HP:")]
+df_X = df[df_terms]
+
+neo_terms = neo.columns[pd.Series(neo.columns).str.startswith("HP:")]
+neo_X = neo[neo_terms]
+
+concat_X = pd.concat([df_X, neo_X], keys=["rady","neo"])
+concat_X = concat_X.loc[:,concat_X.iloc[0,:].notna()].fillna(0, downcast="infer")
+concat_terms = concat_X.columns[pd.Series(concat_X.columns).str.startswith("HP:")]
+
+rady_X = concat_X.loc[["rady"]].reset_index(drop=True).to_numpy()
+neo_X = concat_X.loc[["neo"]].reset_index(drop=True).to_numpy()
+
+rady_y = df["outcome"].to_numpy()
+
+mod = BernoulliNB()
+fit = mod.fit(rady_X, rady_y)
+pre = fit.predict_proba(neo_X)
+neo_scr = -np.log(pre[:,0])
+for scr in neo_scr:
+	print(scr)
+sys.exit()
+
 
 # cross-validation
 loo = LeaveOneOut()
