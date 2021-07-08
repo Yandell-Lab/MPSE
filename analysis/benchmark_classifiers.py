@@ -1,9 +1,6 @@
 #!/usr/bin/env python3
 
 import sys
-#from time import time
-#import logging
-import argparse
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -18,16 +15,14 @@ from sklearn.naive_bayes import BernoulliNB
 from sklearn import metrics
 
 
-parser = argparse.ArgumentParser()
-parser.add_argument("-d", "--data", action="store", 
-        default="/scratch/ucgd/lustre-work/yandell/u1323262/MPSE/rady_data_prep/rady_hpo_all_seq_joined.csv")
-parser.add_argument("-n", "--neoseq", action="store",
-        default="/scratch/ucgd/lustre-work/yandell/u1323262/MPSE/edw_data/EDW_NeoSeq_validation_cases.csv")
-parser.add_argument("-p", "--processors", action="store", default=8)
-args = parser.parse_args()
+rady_fh = "/scratch/ucgd/lustre-work/yandell/u1323262/MPSE/rady_data_prep/rady_hpo_all_seq_joined.csv"
+edw_fh = "/scratch/ucgd/lustre-work/yandell/u1323262/MPSE/edw_data/EDW_NeoSeq_validation_cases.csv"
+neo_fh = "/scratch/ucgd/lustre-work/yandell/u1323262/MPSE/edw_data/NeoSeq_validation_cases.csv"
 
-raw = pd.read_csv(args.data, dtype={"Positive": np.int32})
-neo = pd.read_csv(args.neoseq, dtype={"diagnostic": np.int32}, nrows=9)
+raw = pd.read_csv(rady_fh, dtype={"Positive": np.int32})
+edw = pd.read_csv(edw_fh, dtype={"diagnostic": np.int32}, nrows=9)
+neo = pd.read_csv(neo_fh)
+neo["diagnostic"] = neo["diagnostic"].fillna(0, downcast="infer")
 
 bcols = {
         "CT_HPO_FileID": "pid", 
@@ -37,42 +32,49 @@ tcols = {
         "ResearchID": "pid", 
         "seq_HPO_clean": "terms"
         }
-# split raw into background & target dataframes
+# split rady data into background & target dataframes
 bdat = raw.loc[raw["ResearchID"].isnull()][["CT_HPO_FileID", "all_HPO_clean"]].rename(columns=bcols)
 tdat = raw.loc[raw["ResearchID"].notnull()][["ResearchID", "seq_HPO_clean", "Positive"]].rename(columns=tcols)
 
 # one-hot-encode HPO terms
 b_onehot = bdat.join(bdat["terms"].str.get_dummies(sep="_"))
 t_onehot = tdat.join(tdat["terms"].str.get_dummies(sep="_"))
-
 b_onehot["outcome"] = 0
 t_onehot["outcome"] = 1
 
 # recombine background & target data
-df = b_onehot.merge(t_onehot, how="outer", on=None).fillna(0, downcast="infer")
+rad = b_onehot.merge(t_onehot, how="outer", on=None).fillna(0, downcast="infer")
 
-df_terms = df.columns[pd.Series(df.columns).str.startswith("HP:")]
-df_X = df[df_terms]
-
+rad_terms = rad.columns[pd.Series(rad.columns).str.startswith("HP:")]
+edw_terms = edw.columns[pd.Series(edw.columns).str.startswith("HP:")]
 neo_terms = neo.columns[pd.Series(neo.columns).str.startswith("HP:")]
+rad_X = rad[rad_terms]
+edw_X = edw[edw_terms]
 neo_X = neo[neo_terms]
 
-concat_X = pd.concat([df_X, neo_X], keys=["rady","neo"])
+concat_X = pd.concat([rad_X, edw_X, neo_X], keys=["rady","edw","neo"])
 concat_X = concat_X.loc[:,concat_X.iloc[0,:].notna()].fillna(0, downcast="infer")
 concat_terms = concat_X.columns[pd.Series(concat_X.columns).str.startswith("HP:")]
 
-rady_X = concat_X.loc[["rady"]].reset_index(drop=True).to_numpy()
+rad_X = concat_X.loc[["rady"]].reset_index(drop=True).to_numpy()
+edw_X = concat_X.loc[["edw"]].reset_index(drop=True).to_numpy()
 neo_X = concat_X.loc[["neo"]].reset_index(drop=True).to_numpy()
 
-rady_y = df["outcome"].to_numpy()
+rad_y = rad["outcome"].to_numpy()
 
 mod = BernoulliNB()
-fit = mod.fit(rady_X, rady_y)
-pre = fit.predict_proba(neo_X)
-neo_scr = -np.log(pre[:,0])
-for scr in neo_scr:
-	print(scr)
-sys.exit()
+fit = mod.fit(rad_X, rad_y)
+
+edw_pre = fit.predict_proba(edw_X)
+neo_pre = fit.predict_proba(neo_X)
+#edw_scr = -np.log(edw_pre[:,0])
+#neo_scr = -np.log(neo_pre[:,0])
+
+edw_pred = pd.DataFrame(edw_pre, columns=["neg_proba","pos_proba"]).join(edw[["diagnostic"]])
+neo_pred = pd.DataFrame(neo_pre, columns=["neg_proba","pos_proba"]).join(neo[["diagnostic"]])
+edw_pred.to_csv("/scratch/ucgd/lustre-work/yandell/u1323262/MPSE/analysis/edw_case_predictions.csv", index=False)
+neo_pred.to_csv("/scratch/ucgd/lustre-work/yandell/u1323262/MPSE/analysis/neo_case_predictions.csv", index=False)
+
 
 
 # cross-validation
@@ -84,13 +86,13 @@ clf = BernoulliNB()
 #        cv=loo,
 #        scoring=["accuracy"],#,"roc_auc"],
 #        return_train_score=True,
-#        n_jobs=args.processors)
+#        n_jobs=8)
 #
 #print("Average model accuracy across validation sets")
 #print(scores["test_accuracy"].mean())
 
 # generate class probabilities predictions
-predictions = cross_val_predict(clf, X, y, cv=loo, method="predict_proba", n_jobs=args.processors)
+predictions = cross_val_predict(clf, X, y, cv=loo, method="predict_proba", n_jobs=8)
 
 # compute AUC & plot ROC
 #fpr, tpr, thresholds = metrics.roc_curve(y, predictions[:,1], pos_label=1)
@@ -101,7 +103,7 @@ predictions = cross_val_predict(clf, X, y, cv=loo, method="predict_proba", n_job
 #plt.clf()
 
 # join probabilities with positive diagnosis indicator
-pred_df = pd.DataFrame(predictions, columns=["neg_proba", "pos_proba"]).join(df[["pid", "Positive", "outcome"]])
+pred_df = pd.DataFrame(predictions, columns=["neg_proba", "pos_proba"]).join(rad[["pid", "Positive", "outcome"]])
 # calculate log-probabilities and create rank indicator
 pred_df["neg_score"] = -np.log(pred_df["neg_proba"])
 pred_df["score_rank"] = pred_df["neg_score"].rank(method="first", ascending=False).astype("int32")
