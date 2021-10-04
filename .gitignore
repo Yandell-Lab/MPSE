@@ -1,9 +1,10 @@
-rady_data/
+data/rady_data/
+data/edw_data/
+edw_data/
 
-rady_data_prep/ALL_ADMITS_EXP/data_views/
-rady_data_prep/SEQ_ADMITS/data_views/
-rady_data_prep/rady_hpo_all_seq_joined.csv
-rady_data_prep/RADY_HPO_*
+processing/rady_process/*.csv
+processing/rady_process/ALL_ADMITS_EXP/data_views/
+processing/rady_process/SEQ_ADMITS/data_views/
 
 analysis/prelim_plots/
 analysis/test*
