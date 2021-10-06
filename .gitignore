@@ -1,6 +1,4 @@
-data/rady_data/
-data/edw_data/
-edw_data/
+data/
 
 processing/rady_process/*.csv
 processing/rady_process/ALL_ADMITS_EXP/data_views/
