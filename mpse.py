@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import os
 import sys
 import datetime as dt
 import argparse
@@ -30,6 +31,31 @@ def argue():
             default="analysis/example/",
             help="Output directory for results & reports.")
     return parser.parse_args()
+
+
+def check_file_paths(args):
+    if not os.path.isfile(args.training):
+        print("Aborting - training input file not specified correctly.")
+        sys.exit()
+
+    if os.path.isdir(args.outdir):
+        while True:
+            decision = input("Output directory already exists.\nWould you like to proceed? (y/yes or n/no):\n")
+            if decision == "y" or decision == "yes":
+                break
+            if decision == "n" or decision == "no":
+                print("Aborting - please specify a different output directory.")
+                sys.exit()
+            else:
+                print("Please provide valid response...\n")
+                continue
+    else:
+        os.mkdir(args.outdir)
+    try:
+        os.mkdir(os.path.join(args.outdir, "tables"))
+        os.mkdir(os.path.join(args.outdir, "figures"))
+    except:
+        return True
 
 
 def get_col_position(data, name):
@@ -86,36 +112,46 @@ def sample_cohort(data, diagnos_rate=0.18):
 
     if case_n / n < diagnos_rate:
         control_n = round(case_n / diagnos_rate)
-        control_sample = random.sample(controls, control_n)
-        sample = [data[0]] + cases + control_sample
+        control_samp = random.sample(controls, control_n)
+        samp = [data[0]] + cases + control_samp
     else:
         case_n = round(diagnos_rate * control_n / (1.0 - diagnos_rate))
-        case_sample = random.sample(cases, case_n)
-        sample = [data[0]] + case_sample + controls
-    return sample
+        case_samp = random.sample(cases, case_n)
+        samp = [data[0]] + case_samp + controls
+    return samp
 
 
 def rank_list(data):
-    df = pd.DataFrame(data, columns=["neg_log_proba","pos_log_proba"])
+    df = pd.DataFrame(data[1:], columns=data[0])
     df["score_rank"] = df["neg_log_proba"].rank(method="first", ascending=True)
+    df["rank_cumsum"] = df.sort_values(by=["score_rank"])["seq_status"].sumsum()
+    df["diag_rate"] = df["rank_cumsum"] / df["score_rank"]
+    df["list_fraction"] = df["score_rank"] / df.shape[0]
     return df
 
 
 def main():
     args = argue()
-    #_ = Ontology()
+    check_file_paths(args)
+
+    _ = Ontology()
 
     train = ready(args.training, delim="\t")
     #valid = ready(args.validate, delim="\t")
 
-    #hpo_idx = get_col_position(train, "hpo")
-    #for row in train[1:]:
-    #    row[hpo_idx] = child_terms(row[hpo_idx])
+    hpo_idx = get_col_position(train, "hpo")
+    for row in train[1:]:
+        row[hpo_idx] = child_terms(row[hpo_idx])
 
     train_X, train_y = lst2array(train)
 
-    train_preds = trainer(train_X, train_y)
-    print(rank_list(train_preds))
+    train_preds = [["neg_log_proba","pos_log_proba"]] + trainer(train_X, train_y)
+
+    train = [x + y for x,y in zip(train, train_preds)]
+
+    ranked_list = rank_list(train)
+
+    ranked_list.to_csv(os.path.join(args.outdir, "tables/training_data_ranked_list.csv"))
 
 
 if __name__ == "__main__":
