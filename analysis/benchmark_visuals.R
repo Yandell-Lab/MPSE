@@ -23,22 +23,33 @@ line_plot <- ggplot(dr, aes(x=list_fraction, y=diag_rate)) +
   theme_bw()
 
 
+<<<<<<< HEAD
+=======
+
+
+>>>>>>> 4ecb91b33abc880fc2b5e8135cb4cbb6fa4d66ec
 rad <- read_csv("analysis/bernoulli_nb_predictions.csv")
 edw <- read_csv("analysis/edw_case_predictions.csv") %>% 
   mutate(y=0)
 neo <- read_csv("analysis/neo_case_predictions.csv") %>% 
   mutate(y=0)
 
+<<<<<<< HEAD
 pos <- rad %>% 
   filter(neg_proba!=1) %>% 
   mutate(scr=-log(neg_proba))
 neg <- rad %>% 
   filter(neg_proba==1) %>% 
   mutate(scr=-log(1/pos_proba))
+=======
+pos <- rad %>% filter(neg_proba!=1) %>% mutate(scr=-log(neg_proba))
+neg <- rad %>% filter(neg_proba==1) %>% mutate(scr=-log(1/pos_proba))
+>>>>>>> 4ecb91b33abc880fc2b5e8135cb4cbb6fa4d66ec
 scrs <- bind_rows(pos, neg)
 
 dens_plot <- ggplot(scrs, aes(x=scr, colour=factor(outcome))) + 
   geom_density(adjust=2) + 
+<<<<<<< HEAD
   geom_jitter(data=edw, aes(-log(neg_proba), y, shape=factor(diagnostic)), 
               height = 0.0005, size=2, inherit.aes = FALSE) + 
   scale_shape_discrete(guide = guide_legend(title=NULL), solid = FALSE,
@@ -95,3 +106,14 @@ line_plot2 <- ggplot(scrs, aes(x=list_fraction, y=diag_rate)) +
   geom_hline(yintercept=c(0.18, 0.35), linetype=3) + 
   geom_vline(xintercept=0.21, alpha=0.3, size=1) + 
   theme_bw()
+=======
+    geom_jitter(data=edw, aes(-log(neg_proba), y, shape=factor(diagnostic)), 
+		              height = 0.0005, size=2, inherit.aes = FALSE) + 
+  scale_shape_discrete(guide = guide_legend(title=NULL), solid = FALSE,
+		                              labels = c("Not Diagnostic", "Diagnostic")) +
+  scale_x_continuous(name="MPSE Score", limits=c(-100,520),
+		                          breaks=seq(-100,500,50)) + 
+  scale_colour_discrete(guide = guide_legend(title=NULL),
+			                        labels = c("Not Sequenced", "Sequenced"))
+
+>>>>>>> 4ecb91b33abc880fc2b5e8135cb4cbb6fa4d66ec

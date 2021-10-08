@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 
 # make list of patient CSV files
-ls ../../rady_data/RADY_HPO_ALL_ADMITS_EXP | \
+ls ../../../data/rady_data/RADY_HPO_ALL_ADMITS_EXP | \
 	grep 'UR20.*csv' | \
 	sed -re 's/_/,/;s/.csv//' > all_file_list
 
 # make list of sorted & concatenated CliniThink HPO terms from patient CSV files
-ls ../../rady_data/RADY_HPO_ALL_ADMITS_EXP/*.csv | \
+ls ../../../data/rady_data/RADY_HPO_ALL_ADMITS_EXP/*.csv | \
 	parallel sort | \
 	cut -f1 -d, | \
 	tr '\n' ':' | \
@@ -23,7 +23,7 @@ sed -i 1i"CT_HPO_FileID,all_file_tag,all_CliniThink_HPO" all_combined_list.csv
 mkdir data_views
 
 # clean up the patient data file
-in2csv -f csv ../../rady_data/RADY_HPO_ALL_ADMITS_EXP/CT_HPO_Manifest_Expanded_De_Identified.txt > data_views/CT_HPO_Manifest_Expanded_De_Identified.csv
+in2csv -f csv ../../../data/rady_data/RADY_HPO_ALL_ADMITS_EXP/CT_HPO_Manifest_Expanded_De_Identified.txt > data_views/CT_HPO_Manifest_Expanded_De_Identified.csv
 
 # replace header
 new_head="CT_HPO_FileID,Discharge_Date,Unit,Repeat_cases,Gender,Race,Ethnicity,Age5d,Accession_for_Seq,ResearchID"
