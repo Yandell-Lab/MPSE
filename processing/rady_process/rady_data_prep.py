@@ -14,6 +14,13 @@ def ready(ftag, delim=",", drop_header=False):
             out = [row for row in reader]
     return out
 
+def writey(data, ftag, header=None, delim="\t"):
+    with open(ftag, "w", newline="") as f:
+        writer = csv.writer(f, delimiter=delim)
+        if header is not None:
+            writer.writerow(header)
+        writer.writerows(data)
+    return True
 
 def hpo_parse(hpo_str):
 	hpo_reg = re.compile(r"hp\d{7}")
@@ -28,15 +35,14 @@ def main():
     all_d = ready(all_f, drop_header=True)
     seq_d = ready(seq_f, drop_header=True)
 
-    all_sub = [[x[0],x[4],x[5],x[6],x[7],"0","","",hpo_parse(x[11])] for x in all_d if not x[9]]
+    all_sub = [[x[0],x[4],x[5],x[6],x[7],"0","0","0",hpo_parse(x[11])] for x in all_d if not x[9]]
     seq_sub = [[x[0],"","","",x[1],"1",x[2],x[5],hpo_parse(x[8])] for x in seq_d]
 
     header = ["pid","sex","race","ethnicity","age","seq_status","diagnostic","incidental","hpo"]
+    writey(all_sub + seq_sub,
+            "rady_training_data.csv",
+            header=header)
 
-    with open("rady_training_data.csv", "w", newline="") as f:
-        writer = csv.writer(f, delimiter="\t")
-        writer.writerow(header)
-        writer.writerows(all_sub + seq_sub)
 
 if __name__ == "__main__":
 	main()
