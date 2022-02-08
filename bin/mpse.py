@@ -94,15 +94,20 @@ def trainer(X, y, mod=BernoulliNB(), cv=LeaveOneOut()):
             return_train_score=True,
             n_jobs=-1)
 
-    predictions = cross_val_predict(mod, X, y, 
+    probas = cross_val_predict(mod, X, y, 
             cv=cv, 
             method="predict_proba", 
             n_jobs=-1)
 
+    log_probas = cross_val_predict(mod, X, y, 
+            cv=cv, 
+            method="predict_log_proba", 
+            n_jobs=-1)
+
     y_uniq = np.unique(y)
-    indices = np.argmax(predictions, axis=1)
+    indices = np.argmax(probas, axis=1)
     classes = np.expand_dims(y_uniq[indices], axis=1)
-    return scores, np.hstack((predictions, classes))
+    return scores, np.hstack((probas, log_probas, classes))
 
 
 def sample_cohort(data, diagnos_rate=0.18):
@@ -161,12 +166,13 @@ def main():
     train_X, train_y = lst2array(train)
 
     train_scores, train_preds = trainer(train_X, train_y)
+    preds_header = ["neg_proba","pos_proba","neg_log_proba","pos_log_proba","classes"]
     train = [x+y for x,y in zip(
         train, 
-        [["neg_proba","pos_proba","classes"]] + train_preds.tolist())] 
+        [preds_header] + train_preds.tolist())] 
     train_sample = sample_cohort(train)
 
-    #rocy(train_preds, train_y, path.join(args.outdir, "figures/seq_status_ROC.png"))
+    rocy(train_preds, train_y, path.join(args.outdir, "figures/seq_status_ROC.png"))
 
     writey(train, path.join(args.outdir, "tables/training_predictions.csv"))
     writey(train_sample, path.join(args.outdir, "tables/training_predictions_sample.csv"))
