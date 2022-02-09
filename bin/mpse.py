@@ -24,10 +24,10 @@ from sklearn import metrics
 def argue():
     parser = argparse.ArgumentParser()
     parser.add_argument("-t", "--training", 
-            default="processing/rady_process/rady_training_data.csv", 
+            default="processing/rady/rady_training_data.tsv", 
             help="Case/control training data in standard format.")
     parser.add_argument("-v", "--validate",
-            default="processing/utah_process/utah_validation_data.csv",
+            default="processing/utah/utah_validation_data.tsv",
             help="Validation data in standard format.")
     parser.add_argument("-o", "--outdir", 
             default="analysis/example/",
@@ -132,16 +132,6 @@ def sample_cohort(data, diagnos_rate=0.18):
     return samp
 
 
-#def rank_list(data):
-#    df = pd.DataFrame(data[1:], columns=data[0])
-#    df["diagnostic"] = df["diagnostic"].astype("int8")
-#    df["score_rank"] = df["neg_proba"].rank(method="first", ascending=True)
-#    df["rank_cumsum"] = df.sort_values(by=["score_rank"])["diagnostic"].cumsum()
-#    df["diag_rate"] = df["rank_cumsum"] / df["score_rank"]
-#    df["list_fraction"] = df["score_rank"] / df.shape[0]
-#    return df
-
-
 def rocy(preds, outcome, fpath):
     fpr, tpr, thresholds = metrics.roc_curve(outcome, preds[:,1], pos_label=1)
     roc_auc = metrics.auc(fpr, tpr)
@@ -157,7 +147,7 @@ def main():
     _ = Ontology()
 
     train = ready(args.training, delim="\t")
-    #valid = ready(args.validate, delim="\t")
+    valid = ready(args.validate, delim="\t")
 
     hpo_idx = get_col_position(train, "hpo")
     for row in train[1:]:

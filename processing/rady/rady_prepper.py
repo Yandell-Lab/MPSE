@@ -40,7 +40,7 @@ def main():
 
     header = ["pid","sex","race","ethnicity","age","seq_status","diagnostic","incidental","hpo"]
     writey(all_sub + seq_sub,
-            "rady_training_data.csv",
+            "rady_training_data.tsv",
             header=header)
 
 

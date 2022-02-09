@@ -79,7 +79,7 @@ def main():
 	for row in joined:
 		row[5] = ";".join(hpo_parse(row[5]))
 	
-	header = ["DW_PID","PAT_ID","sequenced","diagnostic","hashed_id","hpo"]
+	header = ["DW_PID","PAT_ID","seq_status","diagnostic","hashed_id","hpo"]
 	args.outfile.write("\t".join(header) + "\n")
 	for row in joined:
 		args.outfile.write("\t".join(row) + "\n")
