@@ -12,6 +12,7 @@ csvcut -c MRN NeoSeq_for_Bennet_0.csv | \
 grep -E "[0-9]{8}" NeoSeq_for_Bennet_1.csv | \
 	awk -v OFS=, '{print $0, "1"}' | \
 	sed 1i"mrn,sequenced" > sequenced.csv
+echo "21271499,1" >> sequenced.csv
 
 csvcut -c1 NeoSeq_for_Bennet_2.csv | \
 	grep -E "[0-9]{8}" | \
@@ -34,6 +35,10 @@ in2csv NeoSeq_for_Bennet_HPOs.xlsx --sheet "Enrolled in NeoSeq" | \
 csvjoin -c MRN,mrn --left -I curated_HPOs.tsv diagnostic.csv | \
 	csvformat -T > neoseq_curated_ref.tsv
 
-csvcut -t -c DW_PID,PAT_ID demographs.tsv | \
+#csvcut -t -c DW_PID,PAT_ID demographs.tsv | \
+#	csvjoin -c PAT_ID,mrn -I - status.tsv | \
+#	csvformat -T > neoseq_cross_demographs.tsv
+
+csvcut -t -c DW_PID,PAT_ID NICU_patients.tsv | \
 	csvjoin -c PAT_ID,mrn -I - status.tsv | \
 	csvformat -T > neoseq_cross_demographs.tsv
