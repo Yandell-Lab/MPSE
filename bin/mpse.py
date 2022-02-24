@@ -7,7 +7,6 @@ import datetime as dt
 import argparse
 import random
 import csv 
-from processing.rady_process.rady_data_prep import ready, writey
 
 from pyhpo.ontology import Ontology
 from pyhpo.set import HPOSet
@@ -34,7 +33,6 @@ def argue():
             help="Output directory for results & reports.")
     return parser.parse_args()
 
-
 def check_file_paths(args):
     if not path.isfile(args.training):
         print("Aborting - training input file not specified correctly.")
@@ -42,7 +40,8 @@ def check_file_paths(args):
 
     if path.isdir(args.outdir):
         while True:
-            decision = input("Output directory already exists.\nWould you like to proceed? (y/yes or n/no):\n")
+            #decision = input("Output directory already exists.\nWould you like to proceed? (y/yes or n/no):\n")
+            decision = "y"
             if decision == "y" or decision == "yes":
                 break
             if decision == "n" or decision == "no":
@@ -59,11 +58,26 @@ def check_file_paths(args):
     except:
         return True
 
+def ready(ftag, delim="\t", drop_header=False):
+	with open(ftag, newline="") as f:
+		reader = csv.reader(f, delimiter=delim)
+		if drop_header:
+			out = [row for row in reader][1:]
+		else:
+			out = [row for row in reader]
+	return out 
+
+def writey(data, ftag, header=None, delim="\t"):
+	with open(ftag, "w", newline="") as f:
+		writer = csv.writer(f, delimiter=delim)
+		if header is not None:
+			writer.writerow(header)
+		writer.writerows(data)
+	return True
 
 def get_col_position(data, name):
     index = data[0].index(name)
     return index
-
 
 def child_terms(hpo):
     hpo_lst = hpo.split(";")
@@ -73,21 +87,30 @@ def child_terms(hpo):
     out_str = ";".join([x["id"] for x in subset_dic])
     return out_str
 
+def lst2array(training, validation=None):
+	if validation:
+		train = pd.DataFrame(training[1:], columns=training[0])
+		valid = pd.DataFrame(validation[1:], columns=validation[0])
 
-def quality_report(data):
-    pass
+		train_onehot = train["hpo"].str.get_dummies(sep=";")
+		valid_onehot = valid["hpo"].str.get_dummies(sep=";")
+		concat = pd.concat([train_onehot, valid_onehot], keys=["train","valid"])
+		concat = concat.loc[:,concat.iloc[0,:].notna()].fillna(0, downcast="infer")
 
+		train_X = concat.loc[["train"]].reset_index(drop=True).to_numpy()
+		valid_X = concat.loc[["valid"]].reset_index(drop=True).to_numpy()
+		train_y = train["seq_status"].astype("int8").to_numpy()
+		valid_y = valid["seq_status"].astype("int8").to_numpy()
+	else:
+		df = pd.DataFrame(training[1:], columns=training[0])
+		one_hot = df["hpo"].str.get_dummies(sep=";")
+		train_X = one_hot.to_numpy()
+		train_y = df["seq_status"].astype("int8").to_numpy()
+		valid_X = None
+		valid_y = None
+	return (train_X, train_y, valid_X, valid_y)
 
-def lst2array(data):
-    df = pd.DataFrame(data[1:], columns=data[0])
-    one_hot = df["hpo"].str.get_dummies(sep=";")
-    #terms = one_hot.columns
-    X = one_hot.to_numpy()
-    y = df["seq_status"].astype("int8").to_numpy()
-    return X,y
-
-
-def trainer(X, y, mod=BernoulliNB(), cv=LeaveOneOut()):
+def training(X, y, mod=BernoulliNB(), cv=LeaveOneOut()):
     scores = cross_validate(mod, X, y,
             cv=cv,
             scoring=["accuracy",],
@@ -109,6 +132,17 @@ def trainer(X, y, mod=BernoulliNB(), cv=LeaveOneOut()):
     classes = np.expand_dims(y_uniq[indices], axis=1)
     return scores, np.hstack((probas, log_probas, classes))
 
+def validation(train_X, train_y, valid_X):
+	mod = BernoulliNB()
+	fit = mod.fit(train_X, train_y)
+
+	probas = fit.predict_proba(valid_X)
+	log_probas = fit.predict_log_proba(valid_X)
+
+	y_uniq = np.unique(train_y)
+	indices = np.argmax(probas, axis=1)
+	classes = np.expand_dims(y_uniq[indices], axis=1)
+	return np.hstack((probas, log_probas, classes))
 
 def sample_cohort(data, diagnos_rate=0.18):
     cases_idx = get_col_position(data, "diagnostic")
@@ -131,7 +165,6 @@ def sample_cohort(data, diagnos_rate=0.18):
         samp = [data[0]] + case_samp + controls
     return samp
 
-
 def rocy(preds, outcome, fpath):
     fpr, tpr, thresholds = metrics.roc_curve(outcome, preds[:,1], pos_label=1)
     roc_auc = metrics.auc(fpr, tpr)
@@ -142,30 +175,40 @@ def rocy(preds, outcome, fpath):
 
 
 def main():
-    args = argue()
-    check_file_paths(args)
-    _ = Ontology()
+	args = argue()
+	check_file_paths(args)
+	_ = Ontology()
+	
+	train = ready(args.training)
+	valid = ready(args.validate)
+	
+	train_hpo_idx = get_col_position(train, "hpo")
+	valid_hpo_idx = get_col_position(valid, "hpo")
+	for row in train[1:]:
+	    row[train_hpo_idx] = child_terms(row[train_hpo_idx])
+	for row in valid[1:]:
+	    row[valid_hpo_idx] = child_terms(row[valid_hpo_idx])
+	
+	train_X, train_y, valid_X, valid_y = lst2array(train, valid)
+	
+	train_scores, train_preds = training(train_X, train_y)
+	valid_preds = validation(train_X, train_y, valid_X)
+	
+	preds_header = ["neg_proba","pos_proba","neg_log_proba","pos_log_proba","classes"]
+	train_out = [x+y for x,y in zip(
+	    train, 
+	    [preds_header] + train_preds.tolist())] 
+	train_sample = sample_cohort(train_out)
 
-    train = ready(args.training, delim="\t")
-    valid = ready(args.validate, delim="\t")
-
-    hpo_idx = get_col_position(train, "hpo")
-    for row in train[1:]:
-        row[hpo_idx] = child_terms(row[hpo_idx])
-
-    train_X, train_y = lst2array(train)
-
-    train_scores, train_preds = trainer(train_X, train_y)
-    preds_header = ["neg_proba","pos_proba","neg_log_proba","pos_log_proba","classes"]
-    train = [x+y for x,y in zip(
-        train, 
-        [preds_header] + train_preds.tolist())] 
-    train_sample = sample_cohort(train)
-
-    rocy(train_preds, train_y, path.join(args.outdir, "figures/seq_status_ROC.png"))
-
-    writey(train, path.join(args.outdir, "tables/training_predictions.csv"))
-    writey(train_sample, path.join(args.outdir, "tables/training_predictions_sample.csv"))
+	valid_out = [x+y for x,y in zip(
+		valid,
+		[preds_header] + valid_preds.tolist())]
+	
+	rocy(train_preds, train_y, path.join(args.outdir, "figures/seq_status_ROC.png"))
+	
+	writey(train_out, path.join(args.outdir, "tables/training_predictions.tsv"))
+	writey(train_sample, path.join(args.outdir, "tables/training_predictions_sample.tsv"))
+	writey(valid_out, path.join(args.outdir, "tables/validation_predictions.tsv"))
 
 
 if __name__ == "__main__":
