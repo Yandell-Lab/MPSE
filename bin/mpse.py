@@ -3,13 +3,14 @@
 from os import mkdir
 import os.path as path
 import sys
-import datetime as dt
 import argparse
 import random
 import csv 
 
 from pyhpo.ontology import Ontology
 from pyhpo.set import HPOSet
+
+from fhir.resources.observation import Observation
 
 import numpy as np
 import pandas as pd
@@ -23,40 +24,19 @@ from sklearn import metrics
 def argue():
     parser = argparse.ArgumentParser()
     parser.add_argument("-t", "--training", 
-            default="processing/rady/rady_training_data.tsv", 
+            default="data/test/fake_training_data.tsv", 
             help="Case/control training data in standard format.")
     parser.add_argument("-v", "--validate",
-            default="processing/utah/utah_validation_data.tsv",
+            default="data/test/fake_validation_data.tsv",
             help="Validation data in standard format.")
+    parser.add_argument("-F", "--FHIR", 
+			action="store_true",
+            help="Return results as FHIR Observation Resource (JSON).")
     parser.add_argument("-o", "--outdir", 
-            default="analysis/example/",
+            default="analysis/test",
             help="Output directory for results & reports.")
     return parser.parse_args()
 
-def check_file_paths(args):
-    if not path.isfile(args.training):
-        print("Aborting - training input file not specified correctly.")
-        sys.exit()
-
-    if path.isdir(args.outdir):
-        while True:
-            #decision = input("Output directory already exists.\nWould you like to proceed? (y/yes or n/no):\n")
-            decision = "y"
-            if decision == "y" or decision == "yes":
-                break
-            if decision == "n" or decision == "no":
-                print("Aborting - please specify a different output directory.")
-                sys.exit()
-            else:
-                print("Please provide valid response...\n")
-                continue
-    else:
-        mkdir(args.outdir)
-    try:
-        mkdir(path.join(args.outdir, "tables"))
-        mkdir(path.join(args.outdir, "figures"))
-    except:
-        return True
 
 def ready(ftag, delim="\t", drop_header=False):
 	with open(ftag, newline="") as f:
@@ -67,6 +47,7 @@ def ready(ftag, delim="\t", drop_header=False):
 			out = [row for row in reader]
 	return out 
 
+
 def writey(data, ftag, header=None, delim="\t"):
 	with open(ftag, "w", newline="") as f:
 		writer = csv.writer(f, delimiter=delim)
@@ -75,9 +56,11 @@ def writey(data, ftag, header=None, delim="\t"):
 		writer.writerows(data)
 	return True
 
-def get_col_position(data, name):
-    index = data[0].index(name)
-    return index
+
+def get_col_pos(data, col_names):
+	idx_dic = {name: data[0].index(name) for name in col_names}
+	return idx_dic
+
 
 def child_terms(hpo):
     hpo_lst = hpo.split(";")
@@ -86,6 +69,32 @@ def child_terms(hpo):
     subset_dic = hpo_subset.toJSON()
     out_str = ";".join([x["id"] for x in subset_dic])
     return out_str
+
+
+def compliant(data, dataset_name, col_idx):
+	# check identifiers are unique
+	ids = [x[0] for x in data[1:]]
+	if len(ids) != len(set(ids)):
+		sys.exit("{0} pids are not unique\nAborting...".format(dataset_name))
+
+	# check value sets for seq_status, diagnostic, incidental
+	# fill "" with 0
+	check_cols = ["seq_status","diagnostic","incidental"]
+	for row in data[1:]:
+		for col in check_cols:
+			if row[col_idx[col]] == "":
+				row[cold_idx[col]] = "0"
+			elif row[col_idx[col]] not in ["0","1"]:
+				sys.exit("{0}: non-compliant {1} value\nAborting...".format(dataset_name, col))
+	
+	# order HPO list
+	# call child_terms()
+	for row in data[1:]:
+		row[col_idx["hpo"]] = ";".join(sorted(row[col_idx["hpo"]].split(";")))
+		row[col_idx["hpo"]] = child_terms(row[col_idx["hpo"]])
+
+	return data
+
 
 def lst2array(training, validation=None):
 	if validation:
@@ -110,6 +119,7 @@ def lst2array(training, validation=None):
 		valid_y = None
 	return (train_X, train_y, valid_X, valid_y)
 
+
 def training(X, y, mod=BernoulliNB(), cv=LeaveOneOut()):
     scores = cross_validate(mod, X, y,
             cv=cv,
@@ -132,6 +142,7 @@ def training(X, y, mod=BernoulliNB(), cv=LeaveOneOut()):
     classes = np.expand_dims(y_uniq[indices], axis=1)
     return scores, np.hstack((probas, log_probas, classes))
 
+
 def validation(train_X, train_y, valid_X):
 	mod = BernoulliNB()
 	fit = mod.fit(train_X, train_y)
@@ -144,12 +155,10 @@ def validation(train_X, train_y, valid_X):
 	classes = np.expand_dims(y_uniq[indices], axis=1)
 	return np.hstack((probas, log_probas, classes))
 
-def sample_cohort(data, diagnos_rate=0.18):
-    cases_idx = get_col_position(data, "diagnostic")
-    incident_idx = get_col_position(data, "incidental")
 
-    cases = [x for x in data[1:] if x[cases_idx]=="1" and x[incident_idx]=="0"]
-    controls = [x for x in data[1:] if x[cases_idx]!="1"]
+def sample_cohort(data, col_idx, diagnos_rate=0.18):
+    cases = [x for x in data[1:] if x[col_idx["diagnostic"]]=="1" and x[col_idx["incidental"]]=="0"]
+    controls = [x for x in data[1:] if x[col_idx["diagnostic"]]!="1"]
 
     case_n = len(cases)
     control_n = len(controls)
@@ -165,6 +174,7 @@ def sample_cohort(data, diagnos_rate=0.18):
         samp = [data[0]] + case_samp + controls
     return samp
 
+
 def rocy(preds, outcome, fpath):
     fpr, tpr, thresholds = metrics.roc_curve(outcome, preds[:,1], pos_label=1)
     roc_auc = metrics.auc(fpr, tpr)
@@ -174,21 +184,37 @@ def rocy(preds, outcome, fpath):
     return True
 
 
+def build_resources(data, col_idx):
+	resources = []
+	for pt in data:
+		injest = {
+				"resourceType": "Observation",
+				"identifier": [{"value": pt[col_idx["pid"]]}],
+				"status": "final",
+				"code": {
+					"coding": [{"system": "???", "code": "???", "display": "???"}], 
+					"text": "???"
+					}
+				}
+		obs = Observation.parse_obj(injest)
+		resources.append(obs)
+	return resources
+
+
 def main():
 	args = argue()
-	check_file_paths(args)
 	_ = Ontology()
 	
 	train = ready(args.training)
 	valid = ready(args.validate)
 	
-	train_hpo_idx = get_col_position(train, "hpo")
-	valid_hpo_idx = get_col_position(valid, "hpo")
-	for row in train[1:]:
-	    row[train_hpo_idx] = child_terms(row[train_hpo_idx])
-	for row in valid[1:]:
-	    row[valid_hpo_idx] = child_terms(row[valid_hpo_idx])
-	
+	data_col_names = ["pid","seq_status","diagnostic","incidental","hpo"]
+	train_col_idx = get_col_pos(train, data_col_names)
+	valid_col_idx = get_col_pos(valid, data_col_names)
+
+	train = compliant(train, "train_data", train_col_idx)
+	valid = compliant(valid, "valid_data", valid_col_idx)
+
 	train_X, train_y, valid_X, valid_y = lst2array(train, valid)
 	
 	train_scores, train_preds = training(train_X, train_y)
@@ -198,17 +224,27 @@ def main():
 	train_out = [x+y for x,y in zip(
 	    train, 
 	    [preds_header] + train_preds.tolist())] 
-	train_sample = sample_cohort(train_out)
+	train_sample = sample_cohort(train_out, train_col_idx)
 
 	valid_out = [x+y for x,y in zip(
 		valid,
 		[preds_header] + valid_preds.tolist())]
 	
+	if not path.isdir(args.outdir):
+		mkdir(args.outdir)
+		mkdir(path.join(args.outdir, "tables"))
+		mkdir(path.join(args.outdir, "figures"))
+
 	rocy(train_preds, train_y, path.join(args.outdir, "figures/seq_status_ROC.png"))
 	
 	writey(train_out, path.join(args.outdir, "tables/training_predictions.tsv"))
 	writey(train_sample, path.join(args.outdir, "tables/training_predictions_sample.tsv"))
 	writey(valid_out, path.join(args.outdir, "tables/validation_predictions.tsv"))
+
+	if args.FHIR:
+		resources = build_resources()
+		for obs in resources:
+			json.dumps(obs.json(indent=True))
 
 
 if __name__ == "__main__":
