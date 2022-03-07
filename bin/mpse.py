@@ -14,28 +14,39 @@ from fhir.resources.observation import Observation
 
 import numpy as np
 import pandas as pd
+from scipy.stats import binom_test
 from matplotlib import pyplot as plt
 
 from sklearn.model_selection import LeaveOneOut, cross_validate, cross_val_predict
 from sklearn.naive_bayes import BernoulliNB
 from sklearn import metrics
+from joblib import dump, load
 
 
 def argue():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-t", "--training", 
-            default="data/test/fake_training_data.tsv", 
-            help="Case/control training data in standard format.")
-    parser.add_argument("-v", "--validate",
-            default="data/test/fake_validation_data.tsv",
-            help="Validation data in standard format.")
-    parser.add_argument("-F", "--FHIR", 
+	parser = argparse.ArgumentParser()
+	parser.add_argument("-t", "--training",
+			default="data/test/fake_training_data.tsv", 
+			help="Case/control training data in standard format.")
+	parser.add_argument("-m", "--model",
+			required=False,
+			help="Serialized model (pickle object) to load from disc.")
+	parser.add_argument("-p", "--prospective",
+	        required=False,
+	        help="Prospective data in standard format.")
+	parser.add_argument("-s", "--select", 
 			action="store_true",
-            help="Return results as FHIR Observation Resource (JSON).")
-    parser.add_argument("-o", "--outdir", 
-            default="analysis/test",
-            help="Output directory for results & reports.")
-    return parser.parse_args()
+	        help="Perform feature selection using binomial significance test.")
+	parser.add_argument("-F", "--FHIR", 
+			action="store_true",
+	        help="Return results as FHIR Observation Resource (JSON).")
+	parser.add_argument("-P", "--Pickle", 
+			action="store_true",
+	        help="Pickle model object to file 'data/test/model_obj.pickle'")
+	parser.add_argument("-o", "--outdir", 
+	        default="analysis/test",
+	        help="Output directory for results & reports.")
+	return parser.parse_args()
 
 
 def ready(ftag, delim="\t", drop_header=False):
@@ -71,53 +82,63 @@ def child_terms(hpo):
     return out_str
 
 
-def compliant(data, dataset_name, col_idx):
+def compliant(data, dataset_name, col_idx, check_cols=None):
 	# check identifiers are unique
-	ids = [x[0] for x in data[1:]]
+	ids = [x[col_idx["pid"]] for x in data[1:]]
 	if len(ids) != len(set(ids)):
 		sys.exit("{0} pids are not unique\nAborting...".format(dataset_name))
 
 	# check value sets for seq_status, diagnostic, incidental
 	# fill "" with 0
-	check_cols = ["seq_status","diagnostic","incidental"]
-	for row in data[1:]:
-		for col in check_cols:
-			if row[col_idx[col]] == "":
-				row[cold_idx[col]] = "0"
-			elif row[col_idx[col]] not in ["0","1"]:
-				sys.exit("{0}: non-compliant {1} value\nAborting...".format(dataset_name, col))
+	if check_cols:
+		for row in data[1:]:
+			for col in check_cols:
+				if row[col_idx[col]] == "":
+					row[col_idx[col]] = "0"
+				elif row[col_idx[col]] not in ["0","1"]:
+					sys.exit("{0}: non-compliant {1} value\nAborting...".format(dataset_name, col))
 	
 	# order HPO list
 	# call child_terms()
 	for row in data[1:]:
 		row[col_idx["hpo"]] = ";".join(sorted(row[col_idx["hpo"]].split(";")))
 		row[col_idx["hpo"]] = child_terms(row[col_idx["hpo"]])
-
 	return data
 
 
-def lst2array(training, validation=None):
-	if validation:
-		train = pd.DataFrame(training[1:], columns=training[0])
-		valid = pd.DataFrame(validation[1:], columns=validation[0])
+def onehot_encode(data):
+	df = pd.DataFrame(data[1:], columns=data[0])
+	onehot = df["hpo"].str.get_dummies(sep=";")
+	return onehot
 
-		train_onehot = train["hpo"].str.get_dummies(sep=";")
-		valid_onehot = valid["hpo"].str.get_dummies(sep=";")
-		concat = pd.concat([train_onehot, valid_onehot], keys=["train","valid"])
-		concat = concat.loc[:,concat.iloc[0,:].notna()].fillna(0, downcast="infer")
 
-		train_X = concat.loc[["train"]].reset_index(drop=True).to_numpy()
-		valid_X = concat.loc[["valid"]].reset_index(drop=True).to_numpy()
-		train_y = train["seq_status"].astype("int8").to_numpy()
-		valid_y = valid["seq_status"].astype("int8").to_numpy()
-	else:
-		df = pd.DataFrame(training[1:], columns=training[0])
-		one_hot = df["hpo"].str.get_dummies(sep=";")
-		train_X = one_hot.to_numpy()
-		train_y = df["seq_status"].astype("int8").to_numpy()
-		valid_X = None
-		valid_y = None
-	return (train_X, train_y, valid_X, valid_y)
+def select_features(data, col_idx, alpha=0.05, direction_bias="two-sided"):
+	onehot = onehot_encode(data)
+	col_names = onehot.columns
+
+	keep_idx = []
+	drop_idx = []
+	for i in range(onehot.shape[1]):
+		x_b, x_t = 0,0
+		n_b, n_t = 0,0
+		for j in range(onehot.shape[0]):
+			if data[1:][j][col_idx["seq_status"]] == "0":
+				x_b += onehot.iloc[j,i]
+				n_b += 1
+			else:
+				x_t += onehot.iloc[j,i]
+				n_t += 1
+		p = x_b / n_b
+		test = binom_test(x=x_t, n=n_t, p=p, alternative=direction_bias)
+		if test <= alpha:
+			keep_idx.append(i)
+		else:
+			drop_idx.append(i)
+	
+	keep_terms = col_names[keep_idx]
+	drop_terms = col_names[drop_idx]
+	trimmed = onehot.iloc[:,keep_idx]
+	return trimmed, keep_terms, drop_terms
 
 
 def training(X, y, mod=BernoulliNB(), cv=LeaveOneOut()):
@@ -140,20 +161,19 @@ def training(X, y, mod=BernoulliNB(), cv=LeaveOneOut()):
     y_uniq = np.unique(y)
     indices = np.argmax(probas, axis=1)
     classes = np.expand_dims(y_uniq[indices], axis=1)
-    return scores, np.hstack((probas, log_probas, classes))
+    scrs = np.log(probas[:,1] / probas[:,0])
+    return scores, np.hstack((probas, log_probas, classes, scrs[:, np.newaxis]))
 
 
-def validation(train_X, train_y, valid_X):
-	mod = BernoulliNB()
-	fit = mod.fit(train_X, train_y)
+def score_probands(mod, valid_X):
+	probas = mod.predict_proba(valid_X)
+	log_probas = mod.predict_log_proba(valid_X)
 
-	probas = fit.predict_proba(valid_X)
-	log_probas = fit.predict_log_proba(valid_X)
-
-	y_uniq = np.unique(train_y)
+	y_uniq = np.unique(mod.classes_)
 	indices = np.argmax(probas, axis=1)
 	classes = np.expand_dims(y_uniq[indices], axis=1)
-	return np.hstack((probas, log_probas, classes))
+	scrs = np.log(probas[:,1] / probas[:,0])
+	return np.hstack((probas, log_probas, classes, scrs[:, np.newaxis]))
 
 
 def sample_cohort(data, col_idx, diagnos_rate=0.18):
@@ -173,15 +193,6 @@ def sample_cohort(data, col_idx, diagnos_rate=0.18):
         case_samp = random.sample(cases, case_n)
         samp = [data[0]] + case_samp + controls
     return samp
-
-
-def rocy(preds, outcome, fpath):
-    fpr, tpr, thresholds = metrics.roc_curve(outcome, preds[:,1], pos_label=1)
-    roc_auc = metrics.auc(fpr, tpr)
-    roc_plot = metrics.RocCurveDisplay(fpr=fpr, tpr=tpr, roc_auc=roc_auc)
-    roc_plot.plot()
-    plt.savefig(fpath)
-    return True
 
 
 def build_resources(data, col_idx):
@@ -204,42 +215,64 @@ def build_resources(data, col_idx):
 def main():
 	args = argue()
 	_ = Ontology()
-	
-	train = ready(args.training)
-	valid = ready(args.validate)
-	
-	data_col_names = ["pid","seq_status","diagnostic","incidental","hpo"]
-	train_col_idx = get_col_pos(train, data_col_names)
-	valid_col_idx = get_col_pos(valid, data_col_names)
 
-	train = compliant(train, "train_data", train_col_idx)
-	valid = compliant(valid, "valid_data", valid_col_idx)
-
-	train_X, train_y, valid_X, valid_y = lst2array(train, valid)
-	
-	train_scores, train_preds = training(train_X, train_y)
-	valid_preds = validation(train_X, train_y, valid_X)
-	
-	preds_header = ["neg_proba","pos_proba","neg_log_proba","pos_log_proba","classes"]
-	train_out = [x+y for x,y in zip(
-	    train, 
-	    [preds_header] + train_preds.tolist())] 
-	train_sample = sample_cohort(train_out, train_col_idx)
-
-	valid_out = [x+y for x,y in zip(
-		valid,
-		[preds_header] + valid_preds.tolist())]
-	
 	if not path.isdir(args.outdir):
 		mkdir(args.outdir)
 		mkdir(path.join(args.outdir, "tables"))
-		mkdir(path.join(args.outdir, "figures"))
-
-	rocy(train_preds, train_y, path.join(args.outdir, "figures/seq_status_ROC.png"))
 	
-	writey(train_out, path.join(args.outdir, "tables/training_predictions.tsv"))
-	writey(train_sample, path.join(args.outdir, "tables/training_predictions_sample.tsv"))
-	writey(valid_out, path.join(args.outdir, "tables/validation_predictions.tsv"))
+	if args.model:
+		mod = load(args.model)
+		prosp = ready(args.prospective)
+		prosp_col_idx = get_col_pos(prosp, ["pid","hpo"])
+		prosp = compliant(prosp, "prosp_data", prosp_col_idx)
+
+		keep_terms = mod.feature_names_in_
+		df_concat = [onehot_encode(prosp), pd.DataFrame(columns=keep_terms)]
+		prosp_X = pd.concat(df_concat)[keep_terms].fillna(0).astype("int8")
+
+		prosp_preds = score_probands(mod, prosp_X)
+		preds_header = ["neg_proba","pos_proba","neg_log_proba","pos_log_proba","class","scr"]
+		prosp_out = [x+y for x,y in zip(prosp, [preds_header] + prosp_preds.tolist())]
+		writey(prosp_out, path.join(args.outdir, "tables/prospective_predictions.tsv"))
+	else:
+		train = ready(args.training)
+		col_pos_names = ["pid","seq_status","diagnostic","incidental","hpo"]
+		train_col_idx = get_col_pos(train, col_pos_names)
+		train = compliant(train, 
+				"train_data", 
+				train_col_idx, 
+				check_cols=["seq_status","diagnostic","incidental"])
+
+		if args.select:
+			train_X, keep_terms, drop_terms = select_features(train, train_col_idx)
+		else:
+			train_X = onehot_encode(train)
+			keep_terms = train_X.columns
+		train_y = np.array([x[train_col_idx["seq_status"]] for x in train[1:]])
+		if args.Pickle:
+			fit = BernoulliNB().fit(train_X, train_y)
+			dump(fit, "data/test/model_obj.pickle")
+
+		train_scores, train_preds = training(train_X, train_y)
+		preds_header = ["neg_proba","pos_proba","neg_log_proba","pos_log_proba","class","scr"]
+		train_out = [x+y for x,y in zip(train, [preds_header] + train_preds.tolist())] 
+		train_sample = sample_cohort(train_out, train_col_idx)
+
+		writey(train_out, path.join(args.outdir, "tables/training_predictions.tsv"))
+		writey(train_sample, path.join(args.outdir, "tables/training_predictions_sample.tsv"))
+
+		if args.prospective:
+			prosp = ready(args.prospective)
+			prosp_col_idx = get_col_pos(prosp, ["pid","hpo"])
+			prosp = compliant(prosp, "prosp_data", prosp_col_idx)
+
+			df_concat = [onehot_encode(prosp), pd.DataFrame(columns=keep_terms)]
+			prosp_X = pd.concat(df_concat)[keep_terms].fillna(0).astype("int8")
+
+			mod = BernoulliNB().fit(train_X, train_y)
+			prosp_preds = score_probands(mod, prosp_X)
+			prosp_out = [x+y for x,y in zip(prosp, [preds_header] + prosp_preds.tolist())]
+			writey(prosp_out, path.join(args.outdir, "tables/prospective_predictions.tsv"))
 
 	if args.FHIR:
 		resources = build_resources()
