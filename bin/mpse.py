@@ -233,7 +233,10 @@ def main():
 		prosp_preds = score_probands(mod, prosp_X)
 		preds_header = ["neg_proba","pos_proba","neg_log_proba","pos_log_proba","class","scr"]
 		prosp_out = [x+y for x,y in zip(prosp, [preds_header] + prosp_preds.tolist())]
-		writey(prosp_out, path.join(args.outdir, "tables/prospective_predictions.tsv"))
+
+		prosp_writer = csv.writer(sys.stdout, delimiter="\t")
+		prosp_writer.writerows(prosp_out)
+
 	else:
 		train = ready(args.training)
 		col_pos_names = ["pid","seq_status","diagnostic","incidental","hpo"]
@@ -272,7 +275,9 @@ def main():
 			mod = BernoulliNB().fit(train_X, train_y)
 			prosp_preds = score_probands(mod, prosp_X)
 			prosp_out = [x+y for x,y in zip(prosp, [preds_header] + prosp_preds.tolist())]
-			writey(prosp_out, path.join(args.outdir, "tables/prospective_predictions.tsv"))
+
+			prosp_writer = csv.writer(sys.stdout, delimiter="\t")
+			prosp_writer.writerows(prosp_out)
 
 	if args.FHIR:
 		resources = build_resources()
