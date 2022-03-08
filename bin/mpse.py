@@ -34,15 +34,15 @@ def argue():
 	parser.add_argument("-p", "--prospective",
 	        required=False,
 	        help="Prospective data in standard format.")
-	parser.add_argument("-s", "--select", 
-			action="store_true",
-	        help="Perform feature selection using binomial significance test.")
+	parser.add_argument("-a", "--alpha", 
+			type=float,
+			help="Binomial test alpha used for feature selection. Default: no feature selection.")
 	parser.add_argument("-F", "--FHIR", 
 			action="store_true",
 	        help="Return results as FHIR Observation Resource (JSON).")
 	parser.add_argument("-P", "--Pickle", 
 			action="store_true",
-	        help="Pickle model object to file 'data/test/model_obj.pickle'")
+	        help="Pickle model object to file '{outdir}/trained_model.pickle'")
 	parser.add_argument("-o", "--outdir", 
 	        default="analysis/test",
 	        help="Output directory for results & reports.")
@@ -218,7 +218,6 @@ def main():
 
 	if not path.isdir(args.outdir):
 		mkdir(args.outdir)
-		mkdir(path.join(args.outdir, "tables"))
 	
 	if args.model:
 		mod = load(args.model)
@@ -246,23 +245,23 @@ def main():
 				train_col_idx, 
 				check_cols=["seq_status","diagnostic","incidental"])
 
-		if args.select:
-			train_X, keep_terms, drop_terms = select_features(train, train_col_idx)
+		if args.alpha:
+			train_X, keep_terms, drop_terms = select_features(train, train_col_idx, args.alpha)
 		else:
 			train_X = onehot_encode(train)
 			keep_terms = train_X.columns
 		train_y = np.array([x[train_col_idx["seq_status"]] for x in train[1:]])
 		if args.Pickle:
 			fit = BernoulliNB().fit(train_X, train_y)
-			dump(fit, "data/test/model_obj.pickle")
+			dump(fit, path.join(args.outdir, "trained_model.pickle"))
 
 		train_scores, train_preds = training(train_X, train_y)
 		preds_header = ["neg_proba","pos_proba","neg_log_proba","pos_log_proba","class","scr"]
 		train_out = [x+y for x,y in zip(train, [preds_header] + train_preds.tolist())] 
 		train_sample = sample_cohort(train_out, train_col_idx)
 
-		writey(train_out, path.join(args.outdir, "tables/training_predictions.tsv"))
-		writey(train_sample, path.join(args.outdir, "tables/training_predictions_sample.tsv"))
+		writey(train_out, path.join(args.outdir, "training_predictions.tsv"))
+		writey(train_sample, path.join(args.outdir, "training_predictions_sample.tsv"))
 
 		if args.prospective:
 			prosp = ready(args.prospective)
