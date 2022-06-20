@@ -11,6 +11,9 @@ from pyhpo.ontology import Ontology
 from pyhpo.set import HPOSet
 
 from fhir.resources.observation import Observation
+from datetime import datetime as dt
+from datetime import timezone as tz
+import json
 
 import numpy as np
 import pandas as pd
@@ -36,17 +39,56 @@ def argue():
 	        help="Prospective data in standard format.")
 	parser.add_argument("-a", "--alpha", 
 			type=float,
-			help="Binomial test alpha used for feature selection. Default: no feature selection.")
-	parser.add_argument("-F", "--FHIR", 
+			default=1.0,
+			help="""Binomial test alpha used for feature selection. 
+			Default: no feature selection.""")
+	parser.add_argument("--sample_features", 
+			type=float,
+			default=1.0,
+			help="""Fraction of features to sample 
+			from training data for resilience testing. 
+			Default: no sampling.""")
+	parser.add_argument("--fudge_terms", 
+			type=int,
+			default=0,
+			help="""Number of random terms to add/subtract 
+			from prospective observations for resilience testing. 
+			Default: no fudging.""")
+	parser.add_argument("-C", "--Cardinal",
 			action="store_true",
-	        help="Return results as FHIR Observation Resource (JSON).")
+			help="Return cardinal phenotypes for all probands.")
 	parser.add_argument("-P", "--Pickle", 
 			action="store_true",
 	        help="Pickle model object to file '{outdir}/trained_model.pickle'")
+	parser.add_argument("-F", "--FHIR", 
+			action="store_true",
+	        help="Return results as FHIR Observation Resource (JSON).")
 	parser.add_argument("-o", "--outdir", 
 	        default="analysis/test",
 	        help="Output directory for results & reports.")
-	return parser.parse_args()
+	return parser
+
+
+def check_args(parser):
+	args = parser.parse_args()
+	low, high = 0.0, 1.0
+	if args.alpha <= low or args.alpha > high:
+		print("Arg 'ALPHA' defined on interval ({0},{1}]\nAborting".format(low, high))
+		parser.print_usage()
+		sys.exit()
+
+	low, high = 0.5, 1.0
+	if args.sample_features < low or args.sample_features > high:
+		print("Arg 'SAMPLE_FEATURES' defined on interval [{0},{1}]\nAborting".format(low, high))
+		parser.print_usage()
+		sys.exit()
+
+	low, high = -50, 50
+	if args.fudge_terms < low or args.fudge_terms > high:
+		print("Arg 'FUDGE_TERMS' defined on interval [{0},{1}]\nAborting".format(low, high))
+		parser.print_usage()
+		sys.exit()
+	return True
 
 
 def ready(ftag, delim="\t", drop_header=False):
@@ -101,7 +143,7 @@ def compliant(data, dataset_name, col_idx, check_cols=None):
 	# order HPO list
 	# call child_terms()
 	for row in data[1:]:
-		row[col_idx["hpo"]] = ";".join(sorted(row[col_idx["hpo"]].split(";")))
+		row[col_idx["hpo"]] = ";".join(sorted(set(row[col_idx["hpo"]].split(";"))))
 		row[col_idx["hpo"]] = child_terms(row[col_idx["hpo"]])
 	return data
 
@@ -112,7 +154,7 @@ def onehot_encode(data):
 	return onehot
 
 
-def select_features(data, col_idx, alpha=0.05, direction_bias="two-sided"):
+def select_features(data, col_idx, alpha, direction_bias="two-sided"):
 	onehot = onehot_encode(data)
 	col_names = onehot.columns
 
@@ -139,6 +181,33 @@ def select_features(data, col_idx, alpha=0.05, direction_bias="two-sided"):
 	drop_terms = col_names[drop_idx]
 	trimmed = onehot.iloc[:,keep_idx]
 	return trimmed, keep_terms, drop_terms
+
+
+def sample_features(data, frac):
+	onehot = onehot_encode(data)
+	ncol = onehot.shape[1]
+	sample_n = int(ncol * frac)
+	keep_idx = np.random.choice(range(ncol), size=sample_n, replace=False)
+	sort_idx = np.sort(keep_idx)
+	sampled = onehot.iloc[:,sort_idx]
+	return sampled, sampled.columns, sample_n
+
+
+def fudge_terms(data, col_idx, sample_set, fudge_n):
+	if fudge_n > 0:
+		for row in data[1:]:
+			choose = np.random.choice(sample_set, size=fudge_n, replace=False)
+			add = ";".join(choose)
+			new = row[col_idx["hpo"]] + ";" + add
+			row[col_idx["hpo"]] = ";".join(sorted(new.split(";")))
+	else:
+		for row in data[1:]:
+			new = row[col_idx["hpo"]].split(";")
+			choose = np.random.choice(range(len(new)), size=abs(fudge_n), replace=False)
+			for i in np.sort(choose)[::-1]:
+				del new[i]
+			row[col_idx["hpo"]] = ";".join(new)
+	return data
 
 
 def training(X, y, mod=BernoulliNB(), cv=LeaveOneOut()):
@@ -169,7 +238,7 @@ def score_probands(mod, valid_X):
 	probas = mod.predict_proba(valid_X)
 	log_probas = mod.predict_log_proba(valid_X)
 
-	y_uniq = np.unique(mod.classes_)
+	y_uniq = mod.classes_
 	indices = np.argmax(probas, axis=1)
 	classes = np.expand_dims(y_uniq[indices], axis=1)
 	scrs = np.log(probas[:,1] / probas[:,0])
@@ -195,25 +264,63 @@ def sample_cohort(data, col_idx, diagnos_rate=0.18):
     return samp
 
 
+def rocy(preds, outcome):
+	fpr, tpr, thresholds = metrics.roc_curve(outcome.astype("int8")[:, np.newaxis], preds[:,1], pos_label=1)
+	roc_auc = metrics.auc(fpr, tpr)
+	print(roc_auc, file=sys.stderr)
+	return True
+
+
+def get_cardinal(data, feature_probs):
+	term_names = data.columns
+	cards = []
+	for idx, row in data.iterrows():#.tolist():
+		boolpt = list(map(bool, row))
+		cards.append((term_names[boolpt].tolist(), feature_probs[boolpt].tolist()))
+		print(cards)
+		sys.exit()
+	return cards
+
+
 def build_resources(data, col_idx):
+	stamp = dt.now() #timezone??
 	resources = []
-	for pt in data:
-		injest = {
+	for pt in data[1:]:
+		obs = {
 				"resourceType": "Observation",
 				"identifier": [{"value": pt[col_idx["pid"]]}],
 				"status": "final",
 				"code": {
-					"coding": [{"system": "???", "code": "???", "display": "???"}], 
-					"text": "???"
-					}
+					#"coding": [{"system": "???", "code": "???", "display": "???"}], 
+					"text": "MPSE score: {0}".format(pt[col_idx["scr"]])
+					},
+				"effectiveDateTime": stamp.isoformat()
 				}
-		obs = Observation.parse_obj(injest)
 		resources.append(obs)
 	return resources
+#def build_resources(data, col_idx):
+#	stamp = dt.now() #timezone??
+#	resources = []
+#	for pt in data[1:]:
+#		injest = {
+#				"resourceType": "Observation",
+#				"identifier": [{"value": pt[col_idx["pid"]]}],
+#				"status": "final",
+#				"code": {
+#					#"coding": [{"system": "???", "code": "???", "display": "???"}], 
+#					"text": "MPSE score: {0}".format(pt[col_idx["scr"]])
+#					},
+#				"effectiveDateTime": stamp.isoformat()
+#				}
+#		obs = Observation.parse_obj(injest)
+#		resources.append(obs)
+#	return resources
 
 
 def main():
-	args = argue()
+	parser = argue()
+	args = parser.parse_args()
+	check_args(parser)
 	_ = Ontology()
 
 	if not path.isdir(args.outdir):
@@ -221,11 +328,14 @@ def main():
 	
 	if args.model:
 		mod = load(args.model)
+		keep_terms = mod.feature_names_in_
+
 		prosp = ready(args.prospective)
 		prosp_col_idx = get_col_pos(prosp, ["pid","hpo"])
+		if args.fudge_terms != 0:
+			prosp = fudge_terms(prosp, prosp_col_idx, keep_terms, args.fudge_terms)
 		prosp = compliant(prosp, "prosp_data", prosp_col_idx)
 
-		keep_terms = mod.feature_names_in_
 		df_concat = [onehot_encode(prosp), pd.DataFrame(columns=keep_terms)]
 		prosp_X = pd.concat(df_concat)[keep_terms].fillna(0).astype("int8")
 
@@ -245,43 +355,61 @@ def main():
 				train_col_idx, 
 				check_cols=["seq_status","diagnostic","incidental"])
 
-		if args.alpha:
+		if args.alpha != 1.0:
 			train_X, keep_terms, drop_terms = select_features(train, train_col_idx, args.alpha)
+		elif args.sample_features != 1.0:
+			train_X, keep_terms, sample_n = sample_features(train, args.sample_features)
 		else:
 			train_X = onehot_encode(train)
 			keep_terms = train_X.columns
 		train_y = np.array([x[train_col_idx["seq_status"]] for x in train[1:]])
-		if args.Pickle:
-			fit = BernoulliNB().fit(train_X, train_y)
-			dump(fit, path.join(args.outdir, "trained_model.pickle"))
 
 		train_scores, train_preds = training(train_X, train_y)
+		#rocy(train_preds, train_y)
 		preds_header = ["neg_proba","pos_proba","neg_log_proba","pos_log_proba","class","scr"]
 		train_out = [x+y for x,y in zip(train, [preds_header] + train_preds.tolist())] 
 		train_sample = sample_cohort(train_out, train_col_idx)
 
-		writey(train_out, path.join(args.outdir, "training_predictions.tsv"))
-		writey(train_sample, path.join(args.outdir, "training_predictions_sample.tsv"))
+		writey(train_out, path.join(args.outdir, 
+			"training_preds_ba{0}_sf{1}.tsv".format(args.alpha, args.sample_features)))
+		writey(train_sample, path.join(args.outdir, 
+			"training_preds_sample_ba{0}_sf{1}.tsv".format(args.alpha, args.sample_features)))
+
+		fit = BernoulliNB().fit(train_X, train_y)
+		if args.Pickle:
+			dump(fit, path.join(args.outdir, "trained_model.pickle"))
+
+		if args.Cardinal:
+			coefs = fit.feature_log_prob_
+			cards = get_cardinal(train_X, coefs[1] - coefs[0])
+			print(cards)
+			sys.exit()
 
 		if args.prospective:
 			prosp = ready(args.prospective)
 			prosp_col_idx = get_col_pos(prosp, ["pid","hpo"])
+			if args.fudge_terms != 0:
+				prosp = fudge_terms(prosp, prosp_col_idx, keep_terms, args.fudge_terms)
 			prosp = compliant(prosp, "prosp_data", prosp_col_idx)
 
 			df_concat = [onehot_encode(prosp), pd.DataFrame(columns=keep_terms)]
 			prosp_X = pd.concat(df_concat)[keep_terms].fillna(0).astype("int8")
 
-			mod = BernoulliNB().fit(train_X, train_y)
-			prosp_preds = score_probands(mod, prosp_X)
+			prosp_preds = score_probands(fit, prosp_X)
 			prosp_out = [x+y for x,y in zip(prosp, [preds_header] + prosp_preds.tolist())]
 
 			prosp_writer = csv.writer(sys.stdout, delimiter="\t")
 			prosp_writer.writerows(prosp_out)
 
+			if args.Cardinal:
+				pass
+
 	if args.FHIR:
-		resources = build_resources()
+		resources = build_resources(prosp_out, get_col_pos(prosp_out, ["pid","scr"]))
 		for obs in resources:
-			json.dumps(obs.json(indent=True))
+			fname = path.join(args.outdir, "{0}_FHIR.json".format(obs["identifier"][0]["value"]))
+			with open(fname, "w") as json_out:
+				json.dump(obs, json_out)
 
 
 if __name__ == "__main__":
