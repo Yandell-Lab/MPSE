@@ -1,15 +1,24 @@
 #!/usr/bin/env R
 
-library(readr)
-library(tibble)
-library(dplyr)
-library(tidyr)
-library(ggplot2)
-library(forcats)
-
+library(tidyverse)
+library(caret)
 
 
 setwd("~/Documents/PhD/Yandell/software/MPSE")
+train_raw <- read_delim("analysis/javier_power/rady_training_data.tsv",
+                  delim = "\t", 
+                  col_types = cols(
+                    sex = col_factor(),
+                    race = col_factor(),
+                    ethnicity = col_factor(),
+                    seq_status = col_factor(),
+                    diagnostic = col_factor(),
+                    incidental = col_factor()
+                  )) %>% 
+  mutate(hpo_cnt = str_count(hpo, "HP"))
+#train_raw[train_raw$pid=="UR225","diagnostic"] <- "1"
+
+
 train <- read_delim("analysis/javier_power/tables/training_predictions.tsv",
                     delim = "\t", 
                     col_types = cols(
@@ -20,7 +29,9 @@ train <- read_delim("analysis/javier_power/tables/training_predictions.tsv",
                       diagnostic = col_factor(),
                       incidental = col_factor(),
                       class = col_factor()
-                    ))
+                    )) %>% 
+  mutate(hpo_cnt = str_count(hpo, "HP"))
+#train[train$pid=="UR225","diagnostic"] <- "1"
 
 
 train_sample <- read_delim("analysis/javier_power/tables/training_predictions_sample.tsv",
@@ -33,12 +44,26 @@ train_sample <- read_delim("analysis/javier_power/tables/training_predictions_sa
                              #diagnostic = col_factor(),
                              incidental = col_factor(),
                              class = col_factor()
-                           )) %>% 
+                           ))
+#train_sample[train_sample$pid=="UR225","diagnostic"] <- 1
+train_sample <- train_sample %>% 
   mutate(diagnostic = replace_na(diagnostic, 0)) %>% 
   arrange(desc(pos_log_proba), neg_log_proba) %>% 
   mutate(rank_cumsum = cumsum(as.integer(diagnostic)),
          diag_rate = rank_cumsum / 1:nrow(.),
          list_fraction = 1:nrow(.) / nrow(.))
+
+
+valid_raw <- read_delim("analysis/javier_power/neoseq4mpse_validation_data.tsv",
+                        delim = "\t", 
+                        col_types = cols(
+                          seq_status = col_factor(),
+                          #diagnostic = col_factor(),
+                          diag_multilevel = col_factor(),
+                          incidental = col_factor()
+                        )) %>% 
+  mutate(hpo = map_chr(map(str_split(hpo, ";"), unique), str_c, collapse=";"),
+         hpo_cnt = str_count(hpo, "HP"))
 
 
 valid <- read_delim("analysis/javier_power/tables/validation_predictions.tsv",
@@ -49,10 +74,37 @@ valid <- read_delim("analysis/javier_power/tables/validation_predictions.tsv",
                       class = col_factor()
                     )) %>% 
   arrange(desc(pos_log_proba), neg_log_proba) %>% 
-  mutate(rank_cumsum = cumsum(as.integer(diagnostic)),
+  mutate(hpo_cnt = str_count(hpo, "HP"),
+         rank_cumsum = cumsum(as.integer(diagnostic)),
          diag_rate = rank_cumsum / 1:nrow(.),
          list_fraction = 1:nrow(.) / nrow(.))
 
+valid_edw <- read_delim("analysis/neoseq_edw/validation_preds.tsv",
+                        delim = "\t", 
+                        col_types = cols(
+                          seq_status = col_factor(),
+                          #diagnostic = col_factor(),
+                          class = col_factor()
+                        )) %>% 
+  arrange(desc(pos_log_proba), neg_log_proba) %>% 
+  mutate(hpo_cnt = str_count(hpo, "HP"),
+         rank_cumsum = cumsum(as.integer(diagnostic)),
+         diag_rate = rank_cumsum / 1:nrow(.),
+         list_fraction = 1:nrow(.) / nrow(.))
+
+valid_ctrl <- read_delim("analysis/utah_controls_n3000/validation_preds.tsv",
+                         delim = "\t", 
+                         col_types = cols(
+                           seq_status = col_factor(),
+                           #diagnostic = col_factor(),
+                           class = col_factor()
+                         )) %>% 
+  arrange(desc(pos_log_proba), neg_log_proba) %>% 
+  mutate(hpo_cnt = str_count(hpo, "HP"),
+         rank_cumsum = cumsum(as.integer(diagnostic)),
+         diag_rate = rank_cumsum / 1:nrow(.),
+         list_fraction = 1:nrow(.) / nrow(.)) %>% 
+  filter(!pid %in% valid_edw$pid)
 
 train_valid_join <- bind_rows("train"=select(train_sample, scr, pos_log_proba, neg_log_proba),
                               "valid"=select(valid, scr, pos_log_proba, neg_log_proba, diagnostic), 
@@ -86,7 +138,7 @@ line_plot <- ggplot(train_sample, aes(x=list_fraction, y=diag_rate)) +
 
 
 double_line_plot <- ggplot(train_sample, aes(x=list_fraction, y=diag_rate)) +
-  geom_smooth(method = lm, formula = y ~ poly(x, 25), se = FALSE, color="red", size=1) + 
+  geom_smooth(aes(color="RCHSD"), method = lm, formula = y ~ poly(x, 25), se = FALSE, size=1) + 
   scale_y_continuous(name="Diagnostic rate", 
                      limits=c(0, 1.0),
                      breaks=c(0.00, 0.18, 0.35, 0.50, 1.00),
@@ -95,32 +147,41 @@ double_line_plot <- ggplot(train_sample, aes(x=list_fraction, y=diag_rate)) +
                      expand=c(0,0)) + 
   scale_x_continuous(name="Top scoring fraction of probands",
                      limits=c(0, 1.0),
-                     breaks=c(0.00, 0.20, 0.50, 1.00),
+                     breaks=c(0.00, 0.20, 0.50, 0.98),
                      labels=c("0%","20%","50%","100%"),
                      minor_breaks=NULL,
                      expand=c(0,0)) + 
-  geom_line(data=valid, aes(x=list_fraction, y=diag_rate),
-            color="blue", size=1) +
+  geom_line(data=valid, aes(x=list_fraction, y=diag_rate, color="NeoSeq-Manual"),
+            size=1) +
+  geom_line(data=valid_edw, aes(x=list_fraction, y=diag_rate, color="NeoSeq-Auto"),
+            size=1) +
+  scale_color_manual(name="Cohort", breaks=c("NeoSeq-Auto", "NeoSeq-Manual", "RCHSD"), values=c("NeoSeq-Auto"="green", "NeoSeq-Manual"="blue", "RCHSD"="red")) +
   geom_hline(yintercept=0.18, linetype="dashed") + 
   geom_hline(yintercept=0.35, linetype="dotted") + 
   geom_vline(xintercept=0.20, alpha=0.3, size=0.7) + 
   geom_segment(aes(x=0.7, xend=0.6, y=0.47, yend=0.37), 
                inherit.aes=FALSE, size=0.3, 
                arrow=arrow(length=unit(0.01, "npc"))) +
-  annotate(geom="text", label="Top 20% scoring probands =", x=0.36, y=0.9) +
-  annotate(geom="text", label="41% Diagnostic Rate", x=0.36, y=0.85) +
-  annotate(geom="text", label="RCIGM Diag. Rate (35%)", x=0.8, y=0.5) +
-  annotate(geom="text", label="NSIGHT2 rate of Mendelian", x=0.4, y=0.2) +
-  annotate(geom="text", label="disease in NICU (18%)", x=0.4, y=0.16) +
+  #annotate(geom="text", label="Top 20% scoring probands =", x=0.40, y=0.9, size=4.5) +
+  #annotate(geom="text", label="41% Diagnostic Rate", x=0.355, y=0.85, size=4.5) +
+  annotate(geom="text", label="RCHSD Diag. Rate (35%)", x=0.8, y=0.5, size=4.5) +
+  annotate(geom="text", label="NSIGHT2 rate of Mendelian", x=0.4, y=0.21, size=4.5) +
+  annotate(geom="text", label="disease in NICU (18%)", x=0.4, y=0.15, size=4.5) +
   theme_bw() + 
-  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+  theme(axis.title=element_text(size=14),
+        axis.text=element_text(size=12),
+        legend.title=element_text(size=14),
+        legend.text=element_text(size=12),
+        legend.position=c(0.82, 0.82),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
 
 
 dens_plot <- ggplot(train, aes(x=scr, fill=seq_status)) + 
   geom_density(alpha=0.6) + 
   geom_segment(aes(x=-75, xend=350, y=0, yend=0), inherit.aes=FALSE, size=0.3, alpha=0.5) +
   scale_y_continuous(name="Density", 
-                     limits=c(-0.004, 0.04),
+                     limits=c(0, 0.04),
                      minor_breaks=NULL) + 
   scale_x_continuous(name="MPSE Score",
                      limits=c(-75, 350),
@@ -129,12 +190,101 @@ dens_plot <- ggplot(train, aes(x=scr, fill=seq_status)) +
   scale_fill_manual(values = c("#00BFC4","#F8766D"),
                     guide = guide_legend(title=NULL),
                     labels = c("Not Sequenced", "Sequenced")) +
-  geom_jitter(data=valid, aes(x=scr, y=-0.002, shape=factor(diagnostic)), 
-              inherit.aes=FALSE, color="black", alpha=0.7, height=0.002, width=0.001) + 
+  geom_density(data=valid, aes(x=scr), alpha=0.2, fill="green") +
+  # geom_jitter(data=valid, aes(x=scr, y=-0.002, shape=factor(diagnostic)), 
+  #             inherit.aes=FALSE, color="black", alpha=0.7, height=0.002, width=0.001) + 
+  # scale_shape_manual(guide = guide_legend(title=NULL),
+  #                    values = c(1,17),
+  #                    labels = c("Not Diagnostic", "Diagnostic")) + 
+  theme_bw()
+
+
+dens_plot_join <- bind_rows("train"=select(train, scr, seq_status),
+                            "valid"=select(valid, scr) %>% mutate(seq_status="2"), 
+                            "valid_edw"=select(valid_edw, scr) %>% mutate(seq_status="3"),
+                            "valid_ctrl"=select(valid_ctrl, scr) %>% mutate(seq_status="4"),
+                            .id = "cohort")
+
+ggplot(dens_plot_join, aes(x=scr, fill=seq_status)) + 
+  geom_density(alpha=0.5) + 
+  geom_segment(aes(x=-75, xend=350, y=0, yend=0), inherit.aes=FALSE, size=0.3, alpha=0.5) +
+  scale_y_continuous(name="Density", 
+                     limits=c(0, 0.08),
+                     minor_breaks=NULL) + 
+  scale_x_continuous(name="MPSE Score",
+                     limits=c(-75, 350),
+                     breaks=seq(-60, 350, 30),
+                     minor_breaks=NULL) +
+  scale_fill_manual(values = c("#00BFC4","#F8766D","#00BA38", "#FFEE5B","#C77CFF"),
+                    guide = guide_legend(title=NULL),
+                    labels = c("RCHSD Not Sequenced", "RCHSD Sequenced","NeoSeq - Manual","NeoSeq - Automated","UofU Not Sequenced")) +
+  theme_bw() + 
+  theme(axis.title=element_text(size=14),
+        axis.text=element_text(size=12),
+        legend.text=element_text(size=12),
+        legend.position=c(0.62, 0.27))
+
+
+ggplot(train, aes(x=scr/hpo_cnt, fill=seq_status)) + 
+  geom_density(alpha=0.6) + 
+  # geom_segment(aes(x=-75, xend=350, y=0, yend=0), inherit.aes=FALSE, size=0.3, alpha=0.5) +
+  # scale_y_continuous(name="Density", 
+  #                    limits=c(-0.004, 0.04),
+  #                    minor_breaks=NULL) + 
+  # scale_x_continuous(name="MPSE Score",
+  #                    limits=c(-75, 350),
+  #                    breaks=seq(-60, 350, 30),
+  #                    minor_breaks=NULL) +
+  scale_fill_manual(values = c("#00BFC4","#F8766D"),
+                    guide = guide_legend(title=NULL),
+                    labels = c("Not Sequenced", "Sequenced")) +
+  # geom_jitter(data=valid, aes(x=scr, y=-0.002, shape=factor(diagnostic)), 
+  #             inherit.aes=FALSE, color="black", alpha=0.7, height=0.002, width=0.001) + 
+  # scale_shape_manual(guide = guide_legend(title=NULL),
+  #                    values = c(1,17),
+  #                    labels = c("Not Diagnostic", "Diagnostic")) + 
+  theme_bw()
+
+
+ggplot(train, aes(x=log10(age+1), fill=seq_status)) + 
+  geom_density(alpha=0.6) +
+  scale_fill_manual(values = c("#00BFC4","#F8766D"),
+                    guide = guide_legend(title=NULL),
+                    labels = c("Not Sequenced", "Sequenced")) +
+  theme_bw()
+
+
+
+ggplot(train, aes(x=hpo_cnt, fill=seq_status)) + 
+  geom_density(alpha=0.6) +
+  scale_y_continuous(name="Density", 
+                     limits=c(-0.003, 0.013),
+                     minor_breaks=NULL) + 
+  scale_x_continuous(name="HPO Term Count",
+                     limits=c(-50, 450),
+                     breaks=seq(-50, 450, 50),
+                     minor_breaks=NULL) +
+  scale_fill_manual(values = c("#00BFC4","#F8766D"),
+                    guide = guide_legend(title=NULL),
+                    labels = c("Not Sequenced", "Sequenced")) +
+  geom_jitter(data=valid, aes(x=hpo_cnt, y=-0.0015, shape=factor(diagnostic)), 
+              inherit.aes=FALSE, color="black", alpha=0.7, height=0.0015, width=0.0001) + 
   scale_shape_manual(guide = guide_legend(title=NULL),
                      values = c(1,17),
                      labels = c("Not Diagnostic", "Diagnostic")) + 
   theme_bw()
+
+
+
+reference_model <- train_raw %>% 
+  select(seq_status, age, hpo_cnt) %>% 
+  mutate(seq_status = fct_recode(seq_status, control="0", case="1"))
+ctrl <- trainControl(method="LOOCV", 
+                     summaryFunction=twoClassSummary, 
+                     classProbs=TRUE,
+                     savePredictions=TRUE)
+age_fit <- train(seq_status ~ age, data=reference_model, method="glm", preProc=c("center", "scale"), trControl=ctrl)
+cnt_fit <- train(seq_status ~ hpo_cnt, data=reference_model, method="glm", preProc=c("center", "scale"), trControl=ctrl)
 
 
 
@@ -267,25 +417,75 @@ fudge_terms_gg <- ggplot(data=fudge_terms_tbl, aes(x=fudge_n, y=scr)) +
 
 
 
+
+cor.test(train_raw$age, train_raw$hpo_cnt)$estimate ^ 2
+cor.test(train$age, train$hpo_cnt)$estimate ^ 2
+ggplot(train, aes(x=log10(age+1), y=hpo_cnt)) + 
+  geom_point(shape=1, alpha=0.5)
+
+cor.test(train$age, train$scr)
+ggplot(train, aes(x=log10(age+1), y=scr)) + 
+  geom_point(shape=1, alpha=0.5) +
+  scale_x_continuous(name="log10 Age (days)",
+                     limits=c(-0.1,5),
+                     breaks=seq(0,5,1),
+                     minor_breaks=NULL) +
+  scale_y_continuous(name="MPSE score",
+                     limits=c(-100,520),
+                     breaks=seq(-100,500,100),
+                     minor_breaks=NULL) +
+  theme_bw()
+
+cor.test(train$hpo_cnt, train$scr)
+ggplot(train, aes(x=hpo_cnt, y=scr)) + 
+  geom_point(aes(color=seq_status), shape=1, alpha=0.5) +
+  scale_x_continuous(name="HPO Term Count",
+                     limits=c(0,620),
+                     breaks=seq(0,600,100),
+                     minor_breaks=NULL) +
+  scale_y_continuous(name="MPSE score",
+                     limits=c(-100,520),
+                     breaks=seq(-100,500,100),
+                     minor_breaks=NULL) +
+  theme_bw()
+ggplot(train, aes(x=hpo_cnt, y=scr)) + 
+  geom_point(aes(color=class), shape=1, alpha=0.5) +
+  scale_x_continuous(name="HPO Term Count",
+                     limits=c(0,620),
+                     breaks=seq(0,600,100),
+                     minor_breaks=NULL) +
+  scale_y_continuous(name="MPSE score",
+                     limits=c(-100,520),
+                     breaks=seq(-100,500,100),
+                     minor_breaks=NULL) +
+  theme_bw()
+
+
+t.test(scr ~ seq_status, data=train)
+
 t.test(scr ~ diagnostic, data=valid)
 t.test(scr ~ diagnostic, data=valid, subset=valid$diag_multilevel != "Pending")
 t.test(scr ~ diagnostic, data=valid, subset=valid$diag_multilevel %in% c("Yes","No"))
 
 
+train %>% 
+  mutate(diag_inc = if_else(diagnostic==1 & incidental==0, 1, 0)) %>%
+  group_by(seq_status, diag_inc) %>% 
+  summarise(n=n(),
+            age=median(age),
+            age_iqr=quantile(age),
+            cnt=median(hpo_cnt),
+            age_cnt=median(hpo_cnt / age))
+
+control_age_offset <- 2.5
+age_cnt_table <- train %>% 
+  mutate(age = if_else(seq_status==0, age + control_age_offset, age))
+age_cnt_table %>% summarise(age=quantile(age), hpo_cnt=quantile(hpo_cnt), age_cnt=quantile(hpo_cnt/age))
+age_cnt_table %>% filter(seq_status==0) %>% summarise(age=quantile(age), hpo_cnt=quantile(hpo_cnt), age_cnt=quantile(hpo_cnt/age))
+age_cnt_table %>% filter(seq_status==1) %>% summarise(age=quantile(age), hpo_cnt=quantile(hpo_cnt), age_cnt=quantile(hpo_cnt/age))
+age_cnt_table %>% filter(seq_status==1 & (diagnostic==0 | incidental==1)) %>% summarise(age=quantile(age), hpo_cnt=quantile(hpo_cnt), age_cnt=quantile(hpo_cnt/age))
+age_cnt_table %>% filter(diagnostic==1 & incidental==0) %>% summarise(age=quantile(age), hpo_cnt=quantile(hpo_cnt), age_cnt=quantile(hpo_cnt/age))
 
 
-
-
-
-dens_plot <- ggplot(scrs, aes(x=scr, colour=seq_status)) + 
-  geom_density(adjust=2) +
-  scale_x_continuous(name="MPSE Score", limits=c(-100,520),
-                     breaks=seq(-100,500,50)) +
-  scale_colour_discrete(guide = guide_legend(title=NULL),
-                        labels = c("Not Sequenced", "Sequenced"))
-
-
-ggplot(scrs, aes(x=scr, y=seq_status)) + 
-  geom_violin() + 
-  geom_jitter(aes(colour=class), alpha=0.3)
-
+vec <- c(14,11,8,18,6,7,16,7,8,9,8,11,12,6,8,13,9,6,8,13,8,10,6,11,15,17,6,8,10,3,9,8,7,8,6,12,9)
+dia <- c(0,0,0,1,1,1,1,1,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,0,0,0,1,0,0,1,0,1,0,0)
