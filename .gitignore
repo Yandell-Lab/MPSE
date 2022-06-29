@@ -6,9 +6,6 @@ processing/utah/*.tsv
 processing/rady/ALL_ADMITS_EXP/data_views/
 processing/rady/SEQ_ADMITS/data_views/
 
-analysis/prelim_plots/
-analysis/test*
-analysis/*.png
-analysis/*.csv
+analysis/
 
 slurmjob*

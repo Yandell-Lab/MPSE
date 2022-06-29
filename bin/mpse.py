@@ -56,10 +56,10 @@ def argue():
 			Default: no fudging.""")
 	parser.add_argument("-C", "--Cardinal",
 			action="store_true",
-			help="Return cardinal phenotypes for all probands.")
+			help="Return cardinal phenotypes for prospective cases.")
 	parser.add_argument("-P", "--Pickle", 
 			action="store_true",
-	        help="Pickle model object to file '{outdir}/trained_model.pickle'")
+	        help="Dump pickled model object to file '{outdir}/trained_model.pickle'")
 	parser.add_argument("-F", "--FHIR", 
 			action="store_true",
 	        help="Return results as FHIR Observation Resource (JSON).")
