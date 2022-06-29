@@ -271,22 +271,35 @@ def rocy(preds, outcome):
 	return True
 
 
-def get_cardinal(data, feature_probs):
+def get_cardinal(pid, data, feature_probs):
 	term_names = data.columns
 	cards = []
 	for idx, row in data.iterrows():#.tolist():
 		boolpt = list(map(bool, row))
-		cards.append((term_names[boolpt].tolist(), feature_probs[boolpt].tolist()))
-		print(cards)
-		sys.exit()
+		card = (term_names[boolpt].tolist(), feature_probs[boolpt].tolist())
+		for feat in range(len(card[0])):
+			cards.append([pid[idx], card[0][feat], Ontology.get_hpo_object(card[0][feat]).name, card[1][feat]])
 	return cards
+
+
+def null_dist(fit, data, col_idx, keep_terms, preds_header):
+	# Create a 'null' distribution of randomly generated HPO term lists
+	term_cnts = [len(x[col_idx["hpo"]].split(";")) for x in data[1:]]
+	null_samp = [np.random.choice(keep_terms, size=n, replace=False) for n in term_cnts]
+	null_samp = [["hpo"]] + [[";".join(x)] for x in null_samp]
+	df_concat = [onehot_encode(null_samp), pd.DataFrame(columns=keep_terms)]
+	null_X = pd.concat(df_concat)[keep_terms].fillna(0).astype("int8")
+	null_preds = score_probands(fit, null_X)
+	null_out = [x+y for x,y in zip(null_samp, [preds_header] + null_preds.tolist())]
+	#writey(null_out, path.join(args.outdir, "null_preds.tsv"))
+	return null_out
 
 
 def build_resources(data, col_idx):
 	stamp = dt.now() #timezone??
 	resources = []
 	for pt in data[1:]:
-		obs = {
+		injest = {
 				"resourceType": "Observation",
 				"identifier": [{"value": pt[col_idx["pid"]]}],
 				"status": "final",
@@ -296,25 +309,10 @@ def build_resources(data, col_idx):
 					},
 				"effectiveDateTime": stamp.isoformat()
 				}
+		obs = Observation.parse_obj(injest)
 		resources.append(obs)
+		#resources.append(injest)
 	return resources
-#def build_resources(data, col_idx):
-#	stamp = dt.now() #timezone??
-#	resources = []
-#	for pt in data[1:]:
-#		injest = {
-#				"resourceType": "Observation",
-#				"identifier": [{"value": pt[col_idx["pid"]]}],
-#				"status": "final",
-#				"code": {
-#					#"coding": [{"system": "???", "code": "???", "display": "???"}], 
-#					"text": "MPSE score: {0}".format(pt[col_idx["scr"]])
-#					},
-#				"effectiveDateTime": stamp.isoformat()
-#				}
-#		obs = Observation.parse_obj(injest)
-#		resources.append(obs)
-#	return resources
 
 
 def main():
@@ -346,6 +344,14 @@ def main():
 		prosp_writer = csv.writer(sys.stdout, delimiter="\t")
 		prosp_writer.writerows(prosp_out)
 
+		if args.Cardinal:
+			coefs = mod.feature_log_prob_
+			prosp_pid = [x[0] for x in prosp[1:]]
+			cards = get_cardinal(prosp_pid, prosp_X, coefs[1] - coefs[0])
+			writey(cards, 
+					path.join(args.outdir, "cardinal_phenotypes.tsv"), 
+					header=["pid","term_id","term_name","coef"])
+
 	else:
 		train = ready(args.training)
 		col_pos_names = ["pid","seq_status","diagnostic","incidental","hpo"]
@@ -376,14 +382,9 @@ def main():
 			"training_preds_sample_ba{0}_sf{1}.tsv".format(args.alpha, args.sample_features)))
 
 		fit = BernoulliNB().fit(train_X, train_y)
+
 		if args.Pickle:
 			dump(fit, path.join(args.outdir, "trained_model.pickle"))
-
-		if args.Cardinal:
-			coefs = fit.feature_log_prob_
-			cards = get_cardinal(train_X, coefs[1] - coefs[0])
-			print(cards)
-			sys.exit()
 
 		if args.prospective:
 			prosp = ready(args.prospective)
@@ -402,7 +403,12 @@ def main():
 			prosp_writer.writerows(prosp_out)
 
 			if args.Cardinal:
-				pass
+				coefs = fit.feature_log_prob_
+				prosp_pid = [x[0] for x in prosp[1:]]
+				cards = get_cardinal(prosp_pid, prosp_X, coefs[1] - coefs[0])
+				writey(cards, 
+						path.join(args.outdir, "cardinal_phenotypes.tsv"), 
+						header=["pid","term_id","term_name","coef"])
 
 	if args.FHIR:
 		resources = build_resources(prosp_out, get_col_pos(prosp_out, ["pid","scr"]))
