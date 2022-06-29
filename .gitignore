@@ -10,3 +10,5 @@ analysis/prelim_plots/
 analysis/test*
 analysis/*.png
 analysis/*.csv
+
+slurmjob*
