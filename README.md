@@ -4,44 +4,38 @@ MPSE employs HPO-based phenotype descriptions derived from patient EHRs to compu
 
 ## CLI Arguments
 The following arguments are available while executing mpse.py
-- -t,  --training       Case/control training data in standard format
-- -m,  --model          Serialized model (pickle object) to load from disc
-- -p,  --prospective    Prospective data in standard format
-- -C,  --Cardinal       Return cardinal phenotypes for prospective data
-- -P,  --Pickle         Dump pickled model object to file
-- -o,  --outdir         Output directory for results and reports
+- -t,  --training ... Case/control training data in standard format
+- -m,  --model ... Serialized model (pickle object) to load from disc
+- -p,  --prospective ... Prospective data in standard format
+- -C,  --Cardinal ... Return cardinal phenotypes for prospective data
+- -P,  --Pickle ... Dump pickled model object to file
+- -o,  --outdir ... Output directory for results and reports
 
 
 ## Example Commands
-To get the full usage statement, use the -h/--help flag:
+To get the full usage statement, use the -h/--help flag:  
+> $ ./bin/mpse.py -h
 
-$ ./bin/mpse.py -h
+The most basic use is training a model and returning scores for the training cohort:  
+> $ ./bin/mpse.py -t data/test/fake_training_data.tsv  
 
-The most basic use is training a model and returning scores for the training cohort:
+By default, output files are written to './analysis/test/'. This command will create a single file named ./analysis/test/training_preds.tsv
 
-$ ./bin/mpse.py -t data/test/fake_training_data.tsv
-
-By default, output files are written to './analysis/test/'. This command will create a single file: ./analysis/test/training_preds.tsv
-
-Prospective cases can be scored using the trained model:
-
-$ ./bin/mpse.py -t data/test/fake_training_data.tsv -p data/test/fake_prospective_data.tsv
+Prospective cases can be scored using the trained model:  
+> $ ./bin/mpse.py -t data/test/fake_training_data.tsv -p data/test/fake_prospective_data.tsv  
 
 The prospective results are sent to standard output
 
-Setting the -P/--Pickle flag will write the model object to disc in pickle format:
-
-$ ./bin/mpse.py -t data/test/fake_training_data.tsv -P
+Setting the -P/--Pickle flag will write the model object to disc in pickle format:  
+> $ ./bin/mpse.py -t data/test/fake_training_data.tsv -P  
 
 A file named trained_model.pickle will appear in the output directory
 
-This pickle object can then be used in place of a training data file to score prospective cases:
+This pickle object can then be used in place of a training data file to score prospective cases:  
+> $ ./bin/mpse.py -m analysis/test/trained_model.pickle -p data/test/fake_prospective_data.tsv
 
-$ ./bin/mpse.py -m analysis/test/trained_model.pickle -p data/test/fake_prospective_data.tsv
-
-The -C/--Cardinal flag generates a file containing cardinal phenotypes for each prospective case:
-
-$ ./bin/mpse.py -m analysis/test/trained_model.pickle -p data/test/fake_prospective_data.tsv -C
+The -C/--Cardinal flag generates a file containing cardinal phenotypes for each prospective case:  
+> $ ./bin/mpse.py -m analysis/test/trained_model.pickle -p data/test/fake_prospective_data.tsv -C  
 
 Cardinal phenotypes are written to a file named cardinal_phenotypes.tsv
 
