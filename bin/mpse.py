@@ -246,6 +246,9 @@ def score_probands(mod, valid_X):
 
 
 def sample_cohort(data, col_idx, diagnos_rate=0.18):
+	# *** RETIRED *** #
+	# This is not a core functionality of MPSE
+	# Sampling has been moved to post-processing in R
     cases = [x for x in data[1:] if x[col_idx["diagnostic"]]=="1" and x[col_idx["incidental"]]=="0"]
     controls = [x for x in data[1:] if x[col_idx["diagnostic"]]!="1"]
 
@@ -374,12 +377,9 @@ def main():
 		#rocy(train_preds, train_y)
 		preds_header = ["neg_proba","pos_proba","neg_log_proba","pos_log_proba","class","scr"]
 		train_out = [x+y for x,y in zip(train, [preds_header] + train_preds.tolist())] 
-		train_sample = sample_cohort(train_out, train_col_idx)
 
 		writey(train_out, path.join(args.outdir, 
 			"training_preds_ba{0}_sf{1}.tsv".format(args.alpha, args.sample_features)))
-		writey(train_sample, path.join(args.outdir, 
-			"training_preds_sample_ba{0}_sf{1}.tsv".format(args.alpha, args.sample_features)))
 
 		fit = BernoulliNB().fit(train_X, train_y)
 
