@@ -142,15 +142,16 @@ def compliant(data, dataset_name, col_idx, check_cols=None):
 	
 	# order HPO list
 	# call child_terms()
+	data[0].append("hpo_clean")
 	for row in data[1:]:
 		row[col_idx["hpo"]] = ";".join(sorted(set(row[col_idx["hpo"]].split(";"))))
-		row[col_idx["hpo"]] = child_terms(row[col_idx["hpo"]])
+		row.append(child_terms(row[col_idx["hpo"]]))
 	return data
 
 
 def onehot_encode(data):
 	df = pd.DataFrame(data[1:], columns=data[0])
-	onehot = df["hpo"].str.get_dummies(sep=";")
+	onehot = df["hpo_clean"].str.get_dummies(sep=";")
 	return onehot
 
 
@@ -198,15 +199,15 @@ def fudge_terms(data, col_idx, sample_set, fudge_n):
 		for row in data[1:]:
 			choose = np.random.choice(sample_set, size=fudge_n, replace=False)
 			add = ";".join(choose)
-			new = row[col_idx["hpo"]] + ";" + add
-			row[col_idx["hpo"]] = ";".join(sorted(new.split(";")))
+			new = row[col_idx["hpo_clean"]] + ";" + add
+			row[col_idx["hpo_clean"]] = ";".join(sorted(new.split(";")))
 	else:
 		for row in data[1:]:
-			new = row[col_idx["hpo"]].split(";")
+			new = row[col_idx["hpo_clean"]].split(";")
 			choose = np.random.choice(range(len(new)), size=abs(fudge_n), replace=False)
 			for i in np.sort(choose)[::-1]:
 				del new[i]
-			row[col_idx["hpo"]] = ";".join(new)
+			row[col_idx["hpo_clean"]] = ";".join(new)
 	return data
 
 
@@ -287,9 +288,9 @@ def get_cardinal(pid, data, feature_probs):
 
 def null_dist(fit, data, col_idx, keep_terms, preds_header):
 	# Create a 'null' distribution of randomly generated HPO term lists
-	term_cnts = [len(x[col_idx["hpo"]].split(";")) for x in data[1:]]
+	term_cnts = [len(x[col_idx["hpo_clean"]].split(";")) for x in data[1:]]
 	null_samp = [np.random.choice(keep_terms, size=n, replace=False) for n in term_cnts]
-	null_samp = [["hpo"]] + [[";".join(x)] for x in null_samp]
+	null_samp = [["hpo_clean"]] + [[";".join(x)] for x in null_samp]
 	df_concat = [onehot_encode(null_samp), pd.DataFrame(columns=keep_terms)]
 	null_X = pd.concat(df_concat)[keep_terms].fillna(0).astype("int8")
 	null_preds = score_probands(fit, null_X)
