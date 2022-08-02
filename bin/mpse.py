@@ -120,7 +120,7 @@ def child_terms(hpo):
     hpo_set = HPOSet.from_queries(hpo_lst)
     hpo_subset = hpo_set.child_nodes()
     subset_dic = hpo_subset.toJSON()
-    out_str = ";".join([x["id"] for x in subset_dic])
+    out_str = ";".join(sorted([x["id"] for x in subset_dic]))
     return out_str
 
 
