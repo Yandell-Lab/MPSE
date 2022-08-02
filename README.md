@@ -54,7 +54,8 @@ There is an exception for prospective data, when *seq_status*, *diagnostic*, and
 
 
 ## Output File Format
-Output files are made by appending 6 new fields to the original input files. These fields are:
+Output files are made by appending 7 new fields to the original input files. These fields are:
+- hpo_clean - list of hpo terms with all parent terms removed (terminal terms retained)
 - neg_proba - predicted probability data comes from negative class (not sequenced)
 - pos_proba - predicted probability data comes from positive class (sequenced)
 - neg_log_proba - natural log of neg_proba
