@@ -6,6 +6,7 @@ import sys
 import argparse
 import random
 import csv 
+import re
 
 from pyhpo.ontology import Ontology
 from pyhpo.set import HPOSet
@@ -54,6 +55,9 @@ def argue():
 			help="""Number of random terms to add/subtract 
 			from prospective observations for resilience testing. 
 			Default: no fudging.""")
+	parser.add_argument("-R", "--Rady",
+			action="store_true",
+			help="Prospective data comes from Rady Clinithink process.")
 	parser.add_argument("-C", "--Cardinal",
 			action="store_true",
 			help="Return cardinal phenotypes for prospective cases.")
@@ -113,6 +117,12 @@ def writey(data, ftag, header=None, delim="\t"):
 def get_col_pos(data, col_names):
 	idx_dic = {name: data[0].index(name) for name in col_names}
 	return idx_dic
+
+
+def hpo_parse(hpo_str):
+	hpo_reg = re.compile(r"hp\d{7}")
+	srch = hpo_reg.search(hpo_str).group()
+	return srch.replace("hp", "HP:", 1)
 
 
 def child_terms(hpo):
@@ -332,7 +342,13 @@ def main():
 		mod = load(args.model)
 		keep_terms = mod.feature_names_in_
 
-		prosp = ready(args.prospective)
+		if args.Rady:
+			raw = ready(args.prospective, delim=",", drop_header=True)
+			hpo_lst = [hpo_parse(x[0]) for x in raw]
+			prosp = [["pid","hpo"], ["", ";".join(hpo_lst)]]
+		else:
+			prosp = ready(args.prospective)
+
 		prosp_col_idx = get_col_pos(prosp, ["pid","hpo"])
 		if args.fudge_terms != 0:
 			prosp = fudge_terms(prosp, prosp_col_idx, keep_terms, args.fudge_terms)
@@ -388,7 +404,13 @@ def main():
 			dump(fit, path.join(args.outdir, "trained_model.pickle"))
 
 		if args.prospective:
-			prosp = ready(args.prospective)
+			if args.Rady:
+				raw = ready(args.prospective, delim=",", drop_header=True)
+				hpo_lst = [hpo_parse(x[0]) for x in raw]
+				prosp = [["pid","hpo"], ["", ";".join(hpo_lst)]]
+			else:
+				prosp = ready(args.prospective)
+
 			prosp_col_idx = get_col_pos(prosp, ["pid","hpo"])
 			if args.fudge_terms != 0:
 				prosp = fudge_terms(prosp, prosp_col_idx, keep_terms, args.fudge_terms)
