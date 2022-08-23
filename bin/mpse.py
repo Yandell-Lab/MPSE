@@ -64,9 +64,12 @@ def argue():
 	parser.add_argument("-P", "--Pickle", 
 			action="store_true",
 	        help="Dump pickled model object to file '{outdir}/trained_model.pickle'")
-	parser.add_argument("-F", "--FHIR", 
+#	parser.add_argument("-F", "--FHIR", 
+#			action="store_true",
+#	        help="Return results as FHIR Observation Resource (JSON).")
+	parser.add_argument("--json",
 			action="store_true",
-	        help="Return results as FHIR Observation Resource (JSON).")
+	        help="Return results as JSON object.")
 	parser.add_argument("-o", "--outdir", 
 	        default="analysis/test",
 	        help="Output directory for results & reports.")
@@ -287,24 +290,53 @@ def null_dist(fit, data, col_idx, keep_terms, preds_header):
 	return null_out
 
 
-def build_resources(data, col_idx):
-	stamp = dt.now() #timezone??
-	resources = []
-	for pt in data[1:]:
-		injest = {
-				"resourceType": "Observation",
-				"identifier": [{"value": pt[col_idx["pid"]]}],
-				"status": "final",
-				"code": {
-					#"coding": [{"system": "???", "code": "???", "display": "???"}], 
-					"text": "MPSE score: {0}".format(pt[col_idx["scr"]])
-					},
-				"effectiveDateTime": stamp.isoformat()
+#def build_resources(data, col_idx):
+#	stamp = dt.now() #timezone??
+#	resources = []
+#	for pt in data[1:]:
+#		injest = {
+#				"resourceType": "Observation",
+#				"identifier": [{"value": pt[col_idx["pid"]]}],
+#				"status": "final",
+#				"code": {
+#					#"coding": [{"system": "???", "code": "???", "display": "???"}], 
+#					"text": "MPSE score: {0}".format(pt[col_idx["scr"]])
+#					},
+#				"effectiveDateTime": stamp.isoformat()
+#				}
+#		obs = Observation.parse_obj(injest)
+#		resources.append(obs)
+#		#resources.append(injest)
+#	return resources
+
+
+def build_JSON(data, col_idx, cards):
+	stamp = dt.now()
+
+	card_dict = {}
+	for row in cards[1:]:
+		card = {"term_id": row[1], "term_name": row[2], "coef": row[3]}
+		if row[0] in card_dict:
+			card_dict[row[0]].append(card)
+		else:
+			card_dict[row[0]] = [card]
+
+	pt_lst = []
+	for row in data[1:]:
+		pt_id = row[col_idx["pid"]]
+		pt = {
+				"identifier": pt_id,
+				"mpse_score": row[col_idx["scr"]],
+				"cardinal_phenotypes": card_dict[pt_id]
 				}
-		obs = Observation.parse_obj(injest)
-		resources.append(obs)
-		#resources.append(injest)
-	return resources
+		pt_lst.append(pt)
+
+	JSON = {
+			"timestamp": stamp.isoformat(),
+			"MPSE_version": "1.0",
+			"MPSE_manifest": pt_lst
+			}
+	return JSON
 
 
 def main():
@@ -411,12 +443,19 @@ def main():
 						path.join(args.outdir, "cardinal_phenotypes.tsv"), 
 						header=["pid","term_id","term_name","coef"])
 
-	if args.FHIR:
-		resources = build_resources(prosp_out, get_col_pos(prosp_out, ["pid","scr"]))
-		for obs in resources:
-			fname = path.join(args.outdir, "{0}_FHIR.json".format(obs["identifier"][0]["value"]))
-			with open(fname, "w") as json_out:
-				json.dump(obs, json_out)
+#	if args.FHIR:
+#		resources = build_resources(prosp_out, get_col_pos(prosp_out, ["pid","scr"]))
+#		for obs in resources:
+#			fname = path.join(args.outdir, "{0}_FHIR.json".format(obs["identifier"][0]["value"]))
+#			with open(fname, "w") as json_out:
+#				json.dump(obs, json_out)
+
+	if args.prospective and args.json:
+		JSON = build_JSON(prosp_out, get_col_pos(prosp_out, ["pid","scr"]), cards)
+		fname = path.join(args.outdir, "prospective_preds.json")
+		with open(fname, "w") as json_out:
+			json.dump(JSON, json_out, indent=4)
+	
 
 
 if __name__ == "__main__":
