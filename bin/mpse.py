@@ -256,28 +256,6 @@ def score_probands(mod, valid_X):
 	return np.hstack((probas, log_probas, classes, scrs[:, np.newaxis]))
 
 
-def sample_cohort(data, col_idx, diagnos_rate=0.18):
-	# *** RETIRED *** #
-	# This is not a core functionality of MPSE
-	# Sampling has been moved to post-processing in R
-    cases = [x for x in data[1:] if x[col_idx["diagnostic"]]=="1" and x[col_idx["incidental"]]=="0"]
-    controls = [x for x in data[1:] if x[col_idx["diagnostic"]]!="1"]
-
-    case_n = len(cases)
-    control_n = len(controls)
-    n = len(data)-1
-
-    if case_n / n < diagnos_rate:
-        control_n = round((1.0 - diagnos_rate) * case_n / diagnos_rate)
-        control_samp = random.sample(controls, control_n)
-        samp = [data[0]] + cases + control_samp
-    else:
-        case_n = round(diagnos_rate * control_n / (1.0 - diagnos_rate))
-        case_samp = random.sample(cases, case_n)
-        samp = [data[0]] + case_samp + controls
-    return samp
-
-
 def rocy(preds, outcome):
 	fpr, tpr, thresholds = metrics.roc_curve(outcome.astype("int8")[:, np.newaxis], preds[:,1], pos_label=1)
 	roc_auc = metrics.auc(fpr, tpr)
