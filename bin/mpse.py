@@ -355,7 +355,7 @@ def main():
 		if args.Rady:
 			raw = ready(args.prospective, delim=",", drop_header=True)
 			hpo_lst = [hpo_parse(x[0]) for x in raw]
-			prosp = [["pid","hpo"], ["", ";".join(hpo_lst)]]
+			prosp = [["pid","hpo"], [path.basename(args.prospective), ";".join(hpo_lst)]]
 		else:
 			prosp = ready(args.prospective)
 
@@ -417,7 +417,7 @@ def main():
 			if args.Rady:
 				raw = ready(args.prospective, delim=",", drop_header=True)
 				hpo_lst = [hpo_parse(x[0]) for x in raw]
-				prosp = [["pid","hpo"], ["", ";".join(hpo_lst)]]
+				prosp = [["pid","hpo"], [path.basename(args.prospective), ";".join(hpo_lst)]]
 			else:
 				prosp = ready(args.prospective)
 
