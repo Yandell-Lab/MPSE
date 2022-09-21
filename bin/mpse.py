@@ -5,16 +5,19 @@ import os.path as path
 import sys
 import argparse
 import random
+import json
 import csv 
 import re
 
 from pyhpo.ontology import Ontology
 from pyhpo.set import HPOSet
 
-from fhir.resources.observation import Observation
+#from fhir.resources.observation import Observation
+from datetime import date
 from datetime import datetime as dt
 from datetime import timezone as tz
-import json
+
+from collections import defaultdict
 
 import numpy as np
 import pandas as pd
@@ -38,6 +41,9 @@ def argue():
 	parser.add_argument("-p", "--prospective",
 	        required=False,
 	        help="Prospective data in standard format.")
+	parser.add_argument("--timestamps", 
+			action="store_true",
+			help="Input features have associated timestamps.")
 	parser.add_argument("-a", "--alpha", 
 			type=float,
 			default=1.0,
@@ -128,6 +134,27 @@ def hpo_parse(hpo_str):
 	return srch.replace("hp", "HP:", 1)
 
 
+def extract_timestamps(data, col_idx):
+	extract = [data[0] + ["manifest_date"]]
+	for row in data[1:]:
+		tmsp = row[col_idx["hpo"]].split(";")
+		tmsp = [(date.fromisoformat(x.split("|")[1]), x.split("|")[0]) for x in tmsp]
+
+		d = defaultdict(set)
+		for k, v in tmsp:
+			d[k].add(v)
+
+		dsort = sorted(d.items())
+		previous = set()
+		for k, v in dsort:
+			new_row = row + [k.isoformat()]
+			new_hpo = v | previous
+			new_row[col_idx["hpo"]] = ";".join(list(new_hpo))
+			extract.append(new_row)
+			previous = new_hpo
+	return extract
+
+
 def child_terms(hpo):
     hpo_lst = hpo.split(";")
     hpo_set = HPOSet.from_queries(hpo_lst)
@@ -141,7 +168,8 @@ def compliant(data, dataset_name, col_idx, check_cols=None):
 	# check identifiers are unique
 	ids = [x[col_idx["pid"]] for x in data[1:]]
 	if len(ids) != len(set(ids)):
-		sys.exit("{0} pids are not unique\nAborting...".format(dataset_name))
+		msg = "Warning: the dataset '{0}' PIDs are not unique. Please check this is expected..."
+		print(msg.format(dataset_name))
 
 	# check value sets for seq_status, diagnostic, incidental
 	# fill "" with 0
@@ -151,7 +179,8 @@ def compliant(data, dataset_name, col_idx, check_cols=None):
 				if row[col_idx[col]] == "":
 					row[col_idx[col]] = "0"
 				elif row[col_idx[col]] not in ["0","1"]:
-					sys.exit("{0}: non-compliant {1} value\nAborting...".format(dataset_name, col))
+					msg = "{0}: non-compliant value for column '{1}'\nAborting..."
+					sys.exit(msg.format(dataset_name, col))
 	
 	# order HPO list
 	# call child_terms()
@@ -360,6 +389,10 @@ def main():
 			prosp = ready(args.prospective)
 
 		prosp_col_idx = get_col_pos(prosp, ["pid","hpo"])
+
+		if args.timestamps:
+			prosp = extract_timestamps(prosp, prosp_col_idx)
+
 		if args.fudge_terms != 0:
 			prosp = fudge_terms(prosp, prosp_col_idx, keep_terms, args.fudge_terms)
 		prosp = compliant(prosp, "prosp_data", prosp_col_idx)
@@ -422,6 +455,10 @@ def main():
 				prosp = ready(args.prospective)
 
 			prosp_col_idx = get_col_pos(prosp, ["pid","hpo"])
+
+			if args.timestamps:
+				prosp = extract_timestamps(prosp, prosp_col_idx)
+
 			if args.fudge_terms != 0:
 				prosp = fudge_terms(prosp, prosp_col_idx, keep_terms, args.fudge_terms)
 			prosp = compliant(prosp, "prosp_data", prosp_col_idx)
