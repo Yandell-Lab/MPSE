@@ -37,24 +37,24 @@ def format_note(cursor):
 	docs = []
 	for row in cursor:
 		serial = [x for x in map(serialize_cell, row)]
-		if serial[4] == "":
+		if serial[5] == "":
 			continue
-		elif len(serial[4]) > 50000:
+		elif len(serial[5]) > 50000:
 			continue
-		elif rtf_regex.match(serial[4]) is not None:
-			serial[4] = pypandoc.convert_text(serial[4], "plain", format="rtf")
-			serial[4] = serial[4].replace("|", "")
-		serial[4] = re.sub(r'[^\x00-\x7f]', ' ', serial[4])
-		serial[4] = re.sub(r'\n', ' ', serial[4])
-		serial[4] = re.sub(r' +', ' ', serial[4])
+		elif rtf_regex.match(serial[5]) is not None:
+			serial[5] = pypandoc.convert_text(serial[5], "plain", format="rtf")
+			serial[5] = serial[5].replace("|", "")
+		serial[5] = re.sub(r'[^\x00-\x7f]', ' ', serial[5])
+		serial[5] = re.sub(r'\n', ' ', serial[5])
+		serial[5] = re.sub(r' +', ' ', serial[5])
 		meta = {"patient_id": serial[0],
-				"document_id": serial[0],
+				"document_id": serial[2],
 				"patient_dob": serial[1],
-				"observation_datetime": serial[2],
+				"observation_datetime": serial[3],
 				"project": "neoseq4mpse",
-				"visit_id": serial[3],
+				"visit_id": serial[4],
 				"author": "bennet_peterson"}
-		docs.append({"data": serial[4], "metadata": meta})
+		docs.append({"data": serial[5], "metadata": meta})
 	return {"documents": docs}
 
 

@@ -3,14 +3,13 @@
 import sys
 import csv
 import argparse
-#from datetime import date
-#from datetime import datetime as dt
+from datetime import datetime as dt
 
 
 def argue():
 	parser = argparse.ArgumentParser()
 	parser.add_argument("-d", "--data", required=True)
-	parser.add_argument("-g", "--grouped", action="store_true")
+	#parser.add_argument("-g", "--grouped", action="store_true")
 	parser.add_argument("-N", "--NeoSeq", action="store_true")
 	parser.add_argument("-M", "--Master", default="docs/NeoSeq_MASTER_all.tsv")
 	parser.add_argument("--timestamps", action="store_true", 
@@ -46,41 +45,68 @@ def generate_lookup(data, idx):
 def main():
 	args = argue()
 	raw = ready(args.data, delim="\t")
+
 	col_names = ["patient_id","dob","observation_datetime","project","abstractions"]
 	data_col_pos = get_col_pos(raw, col_names)
-	data = [row for row in raw if row[data_col_pos["abstractions"]] != ""]
+	pid_idx = data_col_pos["patient_id"]
+	dob_idx = data_col_pos["dob"]
+	obs_idx = data_col_pos["observation_datetime"]
+	prj_idx = data_col_pos["project"]
+	abs_idx = data_col_pos["abstractions"]
 
-	if args.NeoSeq:
-		master = ready(args.Master, delim="\t")
-		col_names = ["mrn","neoseq_id","diagnostic"]
-		master_col_pos = get_col_pos(master, col_names)
-		neo_lookup = generate_lookup(master[1:], master_col_pos["mrn"])
+	data = [row for row in raw if row[abs_idx] != ""]
+
+	if args.timestamps:
+		for row in data[1:]:
+			odt = dt.fromisoformat(row[obs_idx])
+			hpo = row[abs_idx].split(";")
+			tsp = ["|".join([x, odt.strftime("%Y-%m-%d")]) for x in hpo]
+			row[abs_idx] = ";".join(tsp)
+	
+	tmp = {}
+	for row in data[1:]:
+		if row[pid_idx] not in tmp.keys():
+			tmp[row[pid_idx]] = {"project": row[prj_idx], 
+					"dob": row[dob_idx], 
+					"abstractions": [row[abs_idx]]}
+		else:
+			tmp[row[pid_idx]]["abstractions"].append(row[abs_idx])
+
+	col_names = ["patient_id","dob","project","abstractions"]
+	data = [col_names]
+	for k, v in tmp.items():
+		data.append([k, v["dob"], v["project"], ";".join(v["abstractions"])])
+	data_col_pos = get_col_pos(data, col_names)
+	pid_idx = data_col_pos["patient_id"]
+	dob_idx = data_col_pos["dob"]
+	prj_idx = data_col_pos["project"]
+	abs_idx = data_col_pos["abstractions"]
 
 	mpse = []
 	for row in data[1:]:
-		mrn = row[data_col_pos["patient_id"]]
-		dob = row[data_col_pos["dob"]],
-		odt = row[data_col_pos["observation_datetime"]],
-		hpo = row[data_col_pos["abstractions"]]
+		mrn = row[pid_idx]
 		if args.NeoSeq:
+			master = ready(args.Master, delim="\t")
+			col_names = ["mrn","neoseq_id","diagnostic","edw_exists"]
+			master_col_pos = get_col_pos(master, col_names)
+			master = [x for x in master if x[master_col_pos["edw_exists"]] == "1"]
+			neo_lookup = generate_lookup(master, master_col_pos["mrn"])
 			out = [mrn,
 					master[neo_lookup[mrn]][master_col_pos["neoseq_id"]],
-					dob,
-					odt,
+					row[dob_idx],
 					"1",
 					master[neo_lookup[mrn]][master_col_pos["diagnostic"]],
-					hpo]
+					row[abs_idx]]
 		else:
 			out = [mrn,
-					row[data_col_pos["project"]],
-					dob,
-					odt,
+					row[prj_idx],
+					row[dob_idx],
 					"0",
 					"0",
-					hpo]
+					row[abs_idx]]
 		mpse.append(out)
 
-	header = ["pid","project","dob","obs_datetime","seq_status","diagnostic","hpo"]
+	header = ["pid","project","dob","seq_status","diagnostic","hpo"]
 	args.outfile.write("\t".join(header) + "\n")
 	for row in mpse:
 		args.outfile.write("\t".join(row) + "\n")
