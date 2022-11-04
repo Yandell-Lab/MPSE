@@ -29,6 +29,8 @@ from sklearn.naive_bayes import BernoulliNB
 from sklearn import metrics
 from joblib import dump, load
 
+csv.field_size_limit(sys.maxsize)
+
 
 def argue():
 	parser = argparse.ArgumentParser()
@@ -169,7 +171,7 @@ def compliant(data, dataset_name, col_idx, check_cols=None):
 	ids = [x[col_idx["pid"]] for x in data[1:]]
 	if len(ids) != len(set(ids)):
 		msg = "Warning: the dataset '{0}' PIDs are not unique. Please check this is expected..."
-		print(msg.format(dataset_name))
+		print(msg.format(dataset_name), file=sys.stderr)
 
 	# check value sets for seq_status, diagnostic, incidental
 	# fill "" with 0
