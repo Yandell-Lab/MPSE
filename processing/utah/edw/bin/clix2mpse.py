@@ -106,7 +106,7 @@ def main():
 					row[abs_idx]]
 		mpse.append(out)
 
-	header = ["pid","project","dob","seq_status","diagnostic","hpo"]
+	header = ["pid","project","dob","seq_status","diagnostic","codes"]
 	args.outfile.write("\t".join(header) + "\n")
 	for row in mpse:
 		args.outfile.write("\t".join(row) + "\n")

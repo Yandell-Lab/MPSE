@@ -80,7 +80,7 @@ def main():
 		row[5] = ";".join(hpo_parse(row[5]))
 		row.append(row[0])
 	
-	header = ["DW_PID","PAT_ID","seq_status","diagnostic","hashed_id","hpo","pid"]
+	header = ["DW_PID","PAT_ID","seq_status","diagnostic","hashed_id","codes","pid"]
 	args.outfile.write("\t".join(header) + "\n")
 	for row in joined:
 		args.outfile.write("\t".join(row) + "\n")

@@ -11,8 +11,9 @@ import re
 
 from pyhpo.ontology import Ontology
 from pyhpo.set import HPOSet
-
+import simple_icd_10_cm as cm
 #from fhir.resources.observation import Observation
+
 from datetime import date
 from datetime import datetime as dt
 from datetime import timezone as tz
@@ -139,7 +140,7 @@ def hpo_parse(hpo_str):
 def extract_timestamps(data, col_idx):
 	extract = [data[0] + ["manifest_date"]]
 	for row in data[1:]:
-		tmsp = row[col_idx["hpo"]].split(";")
+		tmsp = row[col_idx["codes"]].split(";")
 		tmsp = [(date.fromisoformat(x.split("|")[1]), x.split("|")[0]) for x in tmsp]
 
 		d = defaultdict(set)
@@ -150,23 +151,47 @@ def extract_timestamps(data, col_idx):
 		previous = set()
 		for k, v in dsort:
 			new_row = row + [k.isoformat()]
-			new_hpo = v | previous
-			new_row[col_idx["hpo"]] = ";".join(list(new_hpo))
+			new_cde = v | previous
+			new_row[col_idx["codes"]] = ";".join(list(new_cde))
 			extract.append(new_row)
-			previous = new_hpo
+			previous = new_cde
 	return extract
 
 
-def child_terms(hpo):
-    hpo_lst = hpo.split(";")
+def child_terms(hpo_lst):
     hpo_set = HPOSet.from_queries(hpo_lst)
     hpo_subset = hpo_set.child_nodes()
     subset_dic = hpo_subset.toJSON()
-    out_str = ";".join(sorted([x["id"] for x in subset_dic]))
+    out_str = sorted([x["id"] for x in subset_dic])
     return out_str
 
 
-def compliant(data, dataset_name, col_idx, check_cols=None):
+def clean_codes(codes, keep_others):
+	"""
+	Basic pre-processing of input codes in preparation for modeling.
+	Code types that are currently handled...
+	- Human Phenotype Ontology (HPO)
+	- ICD-10-CM
+	Other code types are optionally included without processing.
+	"""
+	valid_hpo = Ontology.to_dataframe().index.tolist()
+	hpo = []
+	icd= []
+	other = []
+	for cde in codes:
+		if cde in valid_hpo:
+			hpo.append(cde)
+		elif cm.is_valid_item(cde):
+			icd.append(cm.add_dot(cde))
+		else:
+			other.append(cde)
+	hpo_clean = child_terms(hpo)
+	icd_clean = sorted(icd)
+	other_clean = sorted(other) if keep_others else []
+	return hpo_clean + icd_clean + other_clean
+
+
+def compliant(data, dataset_name, col_idx, check_cols=None, keep_all_codes=False):
 	# check identifiers are unique
 	ids = [x[col_idx["pid"]] for x in data[1:]]
 	if len(ids) != len(set(ids)):
@@ -184,18 +209,20 @@ def compliant(data, dataset_name, col_idx, check_cols=None):
 					msg = "{0}: non-compliant value for column '{1}'\nAborting..."
 					sys.exit(msg.format(dataset_name, col))
 	
-	# order HPO list
-	# call child_terms()
-	data[0].append("hpo_clean")
+	# order code list and remove duplicate codes
+	# clean codes
+	data[0].append("codes_clean")
 	for row in data[1:]:
-		row[col_idx["hpo"]] = ";".join(sorted(set(row[col_idx["hpo"]].split(";"))))
-		row.append(child_terms(row[col_idx["hpo"]]))
+		dirty = sorted(set(row[col_idx["codes"]].split(";")))
+		clean = clean_codes(dirty, keep_others=keep_all_codes)
+		row[col_idx["codes"]] = ";".join(dirty)
+		row.append(";".join(clean))
 	return data
 
 
 def onehot_encode(data):
 	df = pd.DataFrame(data[1:], columns=data[0])
-	onehot = df["hpo_clean"].str.get_dummies(sep=";")
+	onehot = df["codes_clean"].str.get_dummies(sep=";")
 	return onehot
 
 
@@ -243,15 +270,15 @@ def fudge_terms(data, col_idx, sample_set, fudge_n):
 		for row in data[1:]:
 			choose = np.random.choice(sample_set, size=fudge_n, replace=False)
 			add = ";".join(choose)
-			new = row[col_idx["hpo_clean"]] + ";" + add
-			row[col_idx["hpo_clean"]] = ";".join(sorted(new.split(";")))
+			new = row[col_idx["codes_clean"]] + ";" + add
+			row[col_idx["codes_clean"]] = ";".join(sorted(new.split(";")))
 	else:
 		for row in data[1:]:
-			new = row[col_idx["hpo_clean"]].split(";")
+			new = row[col_idx["codes_clean"]].split(";")
 			choose = np.random.choice(range(len(new)), size=abs(fudge_n), replace=False)
 			for i in np.sort(choose)[::-1]:
 				del new[i]
-			row[col_idx["hpo_clean"]] = ";".join(new)
+			row[col_idx["codes_clean"]] = ";".join(new)
 	return data
 
 
@@ -299,20 +326,41 @@ def rocy(preds, outcome):
 
 def get_cardinal(pid, data, feature_probs):
 	term_names = data.columns
+	valid_hpo = Ontology.to_dataframe().index.tolist()
 	cards = []
 	for idx, row in data.iterrows():#.tolist():
 		boolpt = list(map(bool, row))
 		card = (term_names[boolpt].tolist(), feature_probs[boolpt].tolist())
 		for feat in range(len(card[0])):
-			cards.append([pid[idx], card[0][feat], Ontology.get_hpo_object(card[0][feat]).name, card[1][feat]])
+			if card[0][feat] in valid_hpo:
+				cards.append([
+					pid[idx], 
+					"HPO",
+					card[0][feat], 
+					Ontology.get_hpo_object(card[0][feat]).name, 
+					card[1][feat]])
+			elif cm.is_valid_item(card[0][feat]):
+				cards.append([
+					pid[idx],
+					"ICD-10-CM",
+					card[0][feat],
+					cm.get_description(card[0][feat]),
+					card[1][feat]])
+			else:
+				cards.append([
+					pid[idx],
+					"Unspecified",
+					card[0][feat],
+					"Unknown",
+					card[1][feat]])
 	return cards
 
 
 def null_dist(fit, data, col_idx, keep_terms, preds_header):
-	# Create a 'null' distribution of randomly generated HPO term lists
-	term_cnts = [len(x[col_idx["hpo_clean"]].split(";")) for x in data[1:]]
+	# Create a 'null' distribution of randomly generated code lists
+	term_cnts = [len(x[col_idx["codes_clean"]].split(";")) for x in data[1:]]
 	null_samp = [np.random.choice(keep_terms, size=n, replace=False) for n in term_cnts]
-	null_samp = [["hpo_clean"]] + [[";".join(x)] for x in null_samp]
+	null_samp = [["codes_clean"]] + [[";".join(x)] for x in null_samp]
 	df_concat = [onehot_encode(null_samp), pd.DataFrame(columns=keep_terms)]
 	null_X = pd.concat(df_concat)[keep_terms].fillna(0).astype("int8")
 	null_preds = score_probands(fit, null_X)
@@ -385,19 +433,19 @@ def main():
 
 		if args.Rady:
 			raw = ready(args.prospective, delim=",", drop_header=True)
-			hpo_lst = [hpo_parse(x[0]) for x in raw]
-			prosp = [["pid","hpo"], [path.basename(args.prospective), ";".join(hpo_lst)]]
+			cde_lst = [hpo_parse(x[0]) for x in raw]
+			prosp = [["pid","codes"], [path.basename(args.prospective), ";".join(cde_lst)]]
 		else:
 			prosp = ready(args.prospective)
 
-		prosp_col_idx = get_col_pos(prosp, ["pid","hpo"])
+		prosp_col_idx = get_col_pos(prosp, ["pid","codes"])
 
 		if args.timestamps:
 			prosp = extract_timestamps(prosp, prosp_col_idx)
 
 		if args.fudge_terms != 0:
 			prosp = fudge_terms(prosp, prosp_col_idx, keep_terms, args.fudge_terms)
-		prosp = compliant(prosp, "prosp_data", prosp_col_idx)
+		prosp = compliant(prosp, "prosp_data", prosp_col_idx, False)
 
 		df_concat = [onehot_encode(prosp), pd.DataFrame(columns=keep_terms)]
 		prosp_X = pd.concat(df_concat)[keep_terms].fillna(0).astype("int8")
@@ -415,16 +463,17 @@ def main():
 			cards = get_cardinal(prosp_pid, prosp_X, coefs[1] - coefs[0])
 			writey(cards, 
 					path.join(args.outdir, "cardinal_phenotypes.tsv"), 
-					header=["pid","term_id","term_name","coef"])
+					header=["pid","domain","term_id","term_name","coef"])
 
 	else:
 		train = ready(args.training)
-		col_pos_names = ["pid","seq_status","diagnostic","incidental","hpo"]
+		col_pos_names = ["pid","seq_status","diagnostic","incidental","codes"]
 		train_col_idx = get_col_pos(train, col_pos_names)
 		train = compliant(train, 
 				"train_data", 
 				train_col_idx, 
-				check_cols=["seq_status","diagnostic","incidental"])
+				["seq_status","diagnostic","incidental"],
+				False)
 
 		if args.alpha != 1.0:
 			train_X, keep_terms, drop_terms = select_features(train, train_col_idx, args.alpha)
@@ -451,19 +500,19 @@ def main():
 		if args.prospective:
 			if args.Rady:
 				raw = ready(args.prospective, delim=",", drop_header=True)
-				hpo_lst = [hpo_parse(x[0]) for x in raw]
-				prosp = [["pid","hpo"], [path.basename(args.prospective), ";".join(hpo_lst)]]
+				cde_lst = [hpo_parse(x[0]) for x in raw]
+				prosp = [["pid","codes"], [path.basename(args.prospective), ";".join(cde_lst)]]
 			else:
 				prosp = ready(args.prospective)
 
-			prosp_col_idx = get_col_pos(prosp, ["pid","hpo"])
+			prosp_col_idx = get_col_pos(prosp, ["pid","codes"])
 
 			if args.timestamps:
 				prosp = extract_timestamps(prosp, prosp_col_idx)
 
 			if args.fudge_terms != 0:
 				prosp = fudge_terms(prosp, prosp_col_idx, keep_terms, args.fudge_terms)
-			prosp = compliant(prosp, "prosp_data", prosp_col_idx)
+			prosp = compliant(prosp, "prosp_data", prosp_col_idx, False)
 
 			df_concat = [onehot_encode(prosp), pd.DataFrame(columns=keep_terms)]
 			prosp_X = pd.concat(df_concat)[keep_terms].fillna(0).astype("int8")
@@ -480,7 +529,7 @@ def main():
 				cards = get_cardinal(prosp_pid, prosp_X, coefs[1] - coefs[0])
 				writey(cards, 
 						path.join(args.outdir, "cardinal_phenotypes.tsv"), 
-						header=["pid","term_id","term_name","coef"])
+						header=["pid","domain","term_id","term_name","coef"])
 
 #	if args.FHIR:
 #		resources = build_resources(prosp_out, get_col_pos(prosp_out, ["pid","scr"]))

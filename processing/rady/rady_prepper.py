@@ -45,7 +45,7 @@ def main():
 		else:
 			seq_sub.append([x[0], "", "", "", x[1], "1", x[2], x[5], hpo_parse(x[8])])
 
-	header = ["pid","sex","race","ethnicity","age","seq_status","diagnostic","incidental","hpo"]
+	header = ["pid","sex","race","ethnicity","age","seq_status","diagnostic","incidental","codes"]
 	writey(all_sub + seq_sub, "rady_training_data.tsv", header=header)
 
 
