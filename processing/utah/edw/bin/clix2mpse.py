@@ -31,7 +31,8 @@ def ready(ftag, delim=",", drop_header=False):
 
 
 def get_col_pos(data, col_names):
-	idx_dic = {name: data[0].index(name) for name in col_names}
+	header = [x.lower() for x in data[0]]
+	idx_dic = {name: header.index(name) for name in col_names}
 	return idx_dic
 
 
@@ -82,15 +83,16 @@ def main():
 	prj_idx = data_col_pos["project"]
 	abs_idx = data_col_pos["abstractions"]
 
+	master = ready(args.Master, delim="\t")
+	col_names = ["mrn","neoseq_id","diagnostic","edw_exists"]
+	master_col_pos = get_col_pos(master, col_names)
+	master = [x for x in master if x[master_col_pos["edw_exists"]] == "1"]
+	neo_lookup = generate_lookup(master, master_col_pos["mrn"])
+
 	mpse = []
 	for row in data[1:]:
 		mrn = row[pid_idx]
-		if args.NeoSeq:
-			master = ready(args.Master, delim="\t")
-			col_names = ["mrn","neoseq_id","diagnostic","edw_exists"]
-			master_col_pos = get_col_pos(master, col_names)
-			master = [x for x in master if x[master_col_pos["edw_exists"]] == "1"]
-			neo_lookup = generate_lookup(master, master_col_pos["mrn"])
+		if mrn in neo_lookup.keys():
 			out = [mrn,
 					master[neo_lookup[mrn]][master_col_pos["neoseq_id"]],
 					row[dob_idx],

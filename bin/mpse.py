@@ -467,12 +467,12 @@ def main():
 
 	else:
 		train = ready(args.training)
-		col_pos_names = ["pid","seq_status","diagnostic","incidental","codes"]
+		col_pos_names = ["pid","seq_status","diagnostic","codes"]
 		train_col_idx = get_col_pos(train, col_pos_names)
 		train = compliant(train, 
 				"train_data", 
 				train_col_idx, 
-				["seq_status","diagnostic","incidental"],
+				["seq_status","diagnostic"],
 				False)
 
 		if args.alpha != 1.0:
