@@ -20,6 +20,12 @@ def argue():
 	return args
 
 
+def get_col_pos(data, col_names):
+	header = [x.lower() for x in data[0]]
+	idx_dic = {name: header.index(name) for name in col_names}
+	return idx_dic
+
+
 def serialize_cell(cell):
 	if cell is None:
 		return ""
@@ -61,7 +67,6 @@ def format_note(cursor):
 def main():
 	args = argue()
 	sql_file = args.sql
-	tsv_file = sql_file.replace('sql','tsv')
 	template = Template(open(sql_file).read())
 
 	username = os.environ.get("EDW_USER")
@@ -77,7 +82,8 @@ def main():
 		args.outfile.write(json.dumps(output, indent=4))
 
 	except Exception as e:
-		print("Error getting " + tsv_file)
+		print("Error executing query...\n")
+		print(query)
 		raise e
 
 

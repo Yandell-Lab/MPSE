@@ -9,8 +9,6 @@ from datetime import datetime as dt
 def argue():
 	parser = argparse.ArgumentParser()
 	parser.add_argument("-d", "--data", required=True)
-	#parser.add_argument("-g", "--grouped", action="store_true")
-	parser.add_argument("-N", "--NeoSeq", action="store_true")
 	parser.add_argument("-M", "--Master", default="docs/NeoSeq_MASTER_all.tsv")
 	parser.add_argument("--timestamps", action="store_true", 
 			help="Add timestamps to HPO terms.")

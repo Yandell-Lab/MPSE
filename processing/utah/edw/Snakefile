@@ -1,29 +1,36 @@
 #configfile: "config/all_neoseq_config.yaml"
-#configfile: "config/select_neoseq_config.yaml"
 #configfile: "config/all_controls_config.yaml"
-configfile: "config/select_controls_config.yaml"
+configfile: "config/all_config.yaml"
+
 
 import pandas as pd
-master = pd.read_table(config["master"]).set_index("mrn", drop=False)
-selected = master.loc[(master["edw_exists"] == 1) & (master["edw_junk"] != 1)]
+table = pd.read_table(config["cohort_list"]).set_index("MRN", drop=False)
+date_filter = table.loc[table["DOB"] >= "2020-01-01"]
+count_filter = date_filter.loc[(date_filter["NOTE_CNT"] >= 3) & (date_filter["ICD10CM_CNT"] >= 3)]
+cohort = count_filter.loc[count_filter["EXCLUDE"] == 0]
+
+#import pandas as pd
+#table = pd.read_table(config["master"]).set_index("mrn", drop=False)
+#cohort = table.loc[(table["edw_notes_exist"] == 1) & (table["edw_junk"] != 1)]
 
 
 rule all:
 	input:
-		#expand("output/{project}/edw2json/{patient}.json", patient=selected["mrn"].tolist(), project=config["project_id"])
-		expand("output/{project}/clix/{patient}_clix.tsv", patient=selected["mrn"].tolist(), project=config["project_id"])
-		#expand("output/{project}/clix2mpse/{patient}_clix4mpse.tsv", patient=selected["mrn"].tolist(), project=config["project_id"])
-		#expand("output/{project}/mpse/{patient}_mpse_predictions.tsv", patient=selected["mrn"].tolist(), project=config["project_id"])
+		expand("output/{project}/notes2mpse/{patient}_clix4mpse.tsv", patient=cohort["MRN"].tolist(), project=config["project_id"]),
+		expand("output/{project}/icd2mpse/{patient}_icd4mpse.tsv", patient=cohort["MRN"].tolist(), project=config["project_id"])
+		#expand("output/{project}/notes_mpse/{patient}_mpse_predictions.tsv", patient=cohort["mrn"].tolist(), project=config["project_id"]),
+		#expand("output/{project}/icd10_mpse/{patient}_mpse_predictions.tsv", patient=cohort["MRN"].tolist(), project=config["project_id"])
 
-rule edw2json:
+
+rule get_notes_edw:
 	output:
-		"output/{project}/edw2json/{patient}.json"
+		"output/{project}/notes_edw/{patient}.json"
 	log:
-		"output/{project}/logs/edw2json/{patient}.log"
+		"output/{project}/logs/notes_edw/{patient}.log"
 	benchmark:
-		"output/{project}/benchmarks/edw2json/{patient}.txt"
+		"output/{project}/benchmarks/notes_edw/{patient}.txt"
 	params:
-		sql=config["sql_script"]
+		sql=config["notes_sql"]
 	shell:
 		"python3 ./bin/neoseq2clix.py "
 		"-s {params.sql} "
@@ -31,9 +38,10 @@ rule edw2json:
 		"{output} "
 		"2> {log}"
 
+
 rule clix:
 	input:
-		"output/{project}/edw2json/{patient}.json"
+		"output/{project}/notes_edw/{patient}.json"
 	output:
 		"output/{project}/clix/{patient}_clix.tsv"
 	log:
@@ -43,6 +51,8 @@ rule clix:
 	params:
 		clinithink=config["clinithink"],
 		secret=config["apisecret"]
+	resources:
+		runtime=20
 	shell:
 		"python3 {params.clinithink}/bin/rapid_clix2.py "
 		"-d {input} "
@@ -51,42 +61,167 @@ rule clix:
 		"{output} "
 		"2> {log}"
 
-rule clix2mpse:
+
+rule notes2mpse:
 	input:
 		"output/{project}/clix/{patient}_clix.tsv"
 	output:
-		"output/{project}/clix2mpse/{patient}_clix4mpse.tsv"
+		"output/{project}/notes2mpse/{patient}_clix4mpse.tsv"
 	log:
-		"output/{project}/logs/clix2mpse/{patient}_clix2mpse.log"
+		"output/{project}/logs/notes2mpse/{patient}_notes2mpse.log"
 	benchmark:
-		"output/{project}/benchmarks/clix2mpse/{patient}_clix2mpse.txt"
+		"output/{project}/benchmarks/notes2mpse/{patient}_notes2mpse.txt"
 	params:
 		master=config["master"]
 	shell:
 		"python3 bin/clix2mpse.py "
 		"-d {input} "
-		"--NeoSeq "
 		"-M {params.master} "
-		"--timestamps "
+		#"--timestamps "
 		"{output} "
 		"2> {log}"
 
-rule mpse:
+
+rule notes_mpse:
 	input:
-		"output/{project}/clix2mpse/{patient}_clix4mpse.tsv"
+		"output/{project}/notes2mpse/{patient}_clix4mpse.tsv"
 	output:
-		"output/{project}/mpse/{patient}_mpse_predictions.tsv"
+		"output/{project}/notes_mpse/{patient}_mpse_predictions.tsv"
 	log:
-		"output/{project}/logs/mpse/{patient}_mpse.log"
+		"output/{project}/logs/notes_mpse/{patient}_mpse.log"
 	benchmark:
-		"output/{project}/benchmarks/mpse/{patient}_mpse.txt"
+		"output/{project}/benchmarks/notes_mpse/{patient}_mpse.txt"
 	params:
 		mpse=config["mpse"]
 	shell:
 		"python3 {params.mpse}/bin/mpse.py "
 		"-m {config[model]} "
 		"-p {input} "
-		"--timestamps "
+		#"--timestamps "
+		"-o output/{wildcards.project}/mpse "
+		"> {output} "
+		"2> {log}"
+
+
+rule clinphen:
+	input:
+		"output/{project}/notes_edw/{patient}.tsv"
+	output:
+		"output/{project}/clinphen/{patient}_clinphen.tsv"
+	log:
+		"output/{project}/logs/clinphen/{patient}_clinphen.log"
+	benchmark:
+		"output/{project}/benchmarks/clinphen/{patient}_clinphen.txt"
+	params:
+		clinphen=config["clinphen"]
+	resources:
+		runtime=20
+	shell:
+		"python3 {params.clinphen}/clinphen_bulk "
+		"--delim \t "
+		"--patcol pid "
+		"--notecol text "
+		"--threads {workflow.cores} "
+		"{input} "
+		"{output} "
+		"2> {log}"
+
+
+rule clinphen2mpse:
+	input:
+		"output/{project}/clinphen/{patient}_clinphen.tsv"
+	output:
+		"output/{project}/clinphen2mpse/{patient}_clinphen4mpse.tsv"
+	log:
+		"output/{project}/logs/clinphen2mpse/{patient}_clinphen2mpse.log"
+	benchmark:
+		"output/{project}/benchmarks/clinphen2mpse/{patient}_clinphen2mpse.txt"
+	params:
+		master=config["master"]
+	shell:
+		"python3 bin/clix2mpse.py "
+		"-d {input} "
+		"-M {params.master} "
+		#"--timestamps "
+		"{output} "
+		"2> {log}"
+
+
+rule clinphen_mpse:
+	input:
+		"output/{project}/clinphen2mpse/{patient}_clinphen4mpse.tsv"
+	output:
+		"output/{project}/clinphen_mpse/{patient}_mpse_predictions.tsv"
+	log:
+		"output/{project}/logs/clinphen_mpse/{patient}_mpse.log"
+	benchmark:
+		"output/{project}/benchmarks/clinphen_mpse/{patient}_mpse.txt"
+	params:
+		mpse=config["mpse"]
+	shell:
+		"python3 {params.mpse}/bin/mpse.py "
+		"-m {config[model]} "
+		"-p {input} "
+		#"--timestamps "
+		"-o output/{wildcards.project}/mpse "
+		"> {output} "
+		"2> {log}"
+
+
+rule get_icd10_edw:
+	output:
+		"output/{project}/icd10_edw/{patient}.tsv"
+	log:
+		"output/{project}/logs/icd10_edw/{patient}.log"
+	benchmark:
+		"output/{project}/benchmarks/icd10_edw/{patient}.txt"
+	params:
+		EDWRD=config["EDWRD"],
+		sql=config["icd10_sql"]
+	shell:
+		"python3 {params.EDWRD}/bin/custom_query.py "
+		"-s {params.sql} "
+		"-p {wildcards.patient} "
+		"{output} "
+		"2> {log}"
+
+
+rule icd2mpse:
+	input:
+		"output/{project}/icd10_edw/{patient}.tsv"
+	output:
+		"output/{project}/icd2mpse/{patient}_icd4mpse.tsv"
+	log:
+		"output/{project}/logs/icd2mpse/{patient}_icd2mpse.log"
+	benchmark:
+		"output/{project}/benchmarks/icd2mpse/{patient}_icd2mpse.txt"
+	params:
+		master=config["master"]
+	shell:
+		"python3 bin/clix2mpse.py "
+		"-d {input} "
+		"-M {params.master} "
+		#"--timestamps "
+		"{output} "
+		"2> {log}"
+
+
+rule icd10_mpse:
+	input:
+		"output/{project}/icd2mpse/{patient}_icd4mpse.tsv"
+	output:
+		"output/{project}/icd10_mpse/{patient}_mpse_predictions.tsv"
+	log:
+		"output/{project}/logs/icd10_mpse/{patient}_mpse.log"
+	benchmark:
+		"output/{project}/benchmarks/icd10_mpse/{patient}_mpse.txt"
+	params:
+		mpse=config["mpse"]
+	shell:
+		"python3 {params.mpse}/bin/mpse.py "
+		"-m {config[model]} "
+		"-p {input} "
+		#"--timestamps "
 		"-o output/{wildcards.project}/mpse "
 		"> {output} "
 		"2> {log}"
