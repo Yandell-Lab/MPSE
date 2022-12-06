@@ -6,7 +6,7 @@ with nicus as (
 	JOIN visit_dm.patient pat
 	ON pat.pat_id = xwalk.pat_id
 	AND visit.nicu_unit_flg_dwid = 675863
-	WHERE pat.pat_id = {{ PAT_ID }}
+	WHERE pat.pat_id = '{{ placeholder }}'
 )
 
 SELECT nicus.pat_id, 

@@ -10,6 +10,8 @@ def argue():
 	parser = argparse.ArgumentParser()
 	parser.add_argument("-d", "--data", required=True)
 	parser.add_argument("-M", "--Master", default="docs/NeoSeq_MASTER_all.tsv")
+	parser.add_argument("-t", "--type", choices=["clix","clinphen","icd10"], required=True,
+			help="Input data source type.")
 	parser.add_argument("--timestamps", action="store_true", 
 			help="Add timestamps to HPO terms.")
 	parser.add_argument("outfile", nargs="?", type=argparse.FileType("w"), default=sys.stdout,
@@ -45,41 +47,53 @@ def main():
 	args = argue()
 	raw = ready(args.data, delim="\t")
 
-	col_names = ["patient_id","dob","observation_datetime","project","abstractions"]
-	data_col_pos = get_col_pos(raw, col_names)
-	pid_idx = data_col_pos["patient_id"]
-	dob_idx = data_col_pos["dob"]
-	obs_idx = data_col_pos["observation_datetime"]
-	prj_idx = data_col_pos["project"]
-	abs_idx = data_col_pos["abstractions"]
+	if args.type == "clix" or args.type == "icd10":
+		col_names = ["patient_id","dob","observation_datetime","project","abstractions"]
+		data_col_pos = get_col_pos(raw, col_names)
+		pid_idx = data_col_pos["patient_id"]
+		dob_idx = data_col_pos["dob"]
+		obs_idx = data_col_pos["observation_datetime"]
+		prj_idx = data_col_pos["project"]
+		abs_idx = data_col_pos["abstractions"]
+		data = [row for row in raw if row[abs_idx] != ""]
 
-	data = [row for row in raw if row[abs_idx] != ""]
-
-	if args.timestamps:
+		if args.timestamps:
+			for row in data[1:]:
+				odt = dt.fromisoformat(row[obs_idx])
+				hpo = row[abs_idx].split(";")
+				tsp = ["|".join([x, odt.strftime("%Y-%m-%d")]) for x in hpo]
+				row[abs_idx] = ";".join(tsp)
+		
+		tmp = {}
 		for row in data[1:]:
-			odt = dt.fromisoformat(row[obs_idx])
-			hpo = row[abs_idx].split(";")
-			tsp = ["|".join([x, odt.strftime("%Y-%m-%d")]) for x in hpo]
-			row[abs_idx] = ";".join(tsp)
-	
-	tmp = {}
-	for row in data[1:]:
-		if row[pid_idx] not in tmp.keys():
-			tmp[row[pid_idx]] = {"project": row[prj_idx], 
-					"dob": row[dob_idx], 
-					"abstractions": [row[abs_idx]]}
-		else:
-			tmp[row[pid_idx]]["abstractions"].append(row[abs_idx])
+			if row[pid_idx] not in tmp.keys():
+				tmp[row[pid_idx]] = {"project": row[prj_idx], 
+						"dob": row[dob_idx], 
+						"abstractions": [row[abs_idx]]}
+			else:
+				tmp[row[pid_idx]]["abstractions"].append(row[abs_idx])
+
+	elif args.type == "clinphen":
+		col_names = ["#patient id","hpo id"]
+		data_col_pos = get_col_pos(raw, col_names)
+		pid_idx = data_col_pos["#patient id"]
+		abs_idx = data_col_pos["hpo id"]
+		data = [row for row in raw if row[abs_idx] != ""]
+
+		tmp = {}
+		for row in data[1:]:
+			if row[pid_idx] not in tmp.keys():
+				tmp[row[pid_idx]] = {"project": "",
+						"dob": "",
+						"abstractions": [row[abs_idx]]}
+			else:
+				tmp[row[pid_idx]]["abstractions"].append(row[abs_idx])
 
 	col_names = ["patient_id","dob","project","abstractions"]
-	data = [col_names]
+	output = [col_names]
 	for k, v in tmp.items():
-		data.append([k, v["dob"], v["project"], ";".join(v["abstractions"])])
-	data_col_pos = get_col_pos(data, col_names)
-	pid_idx = data_col_pos["patient_id"]
-	dob_idx = data_col_pos["dob"]
-	prj_idx = data_col_pos["project"]
-	abs_idx = data_col_pos["abstractions"]
+		output.append([k, v["dob"], v["project"], ";".join(v["abstractions"])])
+	pid_idx, dob_idx, prj_idx, abs_idx = 0,1,2,3
 
 	master = ready(args.Master, delim="\t")
 	col_names = ["mrn","neoseq_id","diagnostic","edw_exists"]
@@ -88,7 +102,7 @@ def main():
 	neo_lookup = generate_lookup(master, master_col_pos["mrn"])
 
 	mpse = []
-	for row in data[1:]:
+	for row in output[1:]:
 		mrn = row[pid_idx]
 		if mrn in neo_lookup.keys():
 			out = [mrn,
