@@ -3,7 +3,7 @@ MPSE employs HPO-based phenotype descriptions derived from patient EHRs to compu
 
 
 ## CLI Arguments
-The following arguments are available while executing mpse.py
+The following core parameters are available while executing mpse.py
 - -t,  --training ... Case/control training data in standard format
 - -m,  --model ... Serialized model (pickle object) to load from disc
 - -p,  --prospective ... Prospective data in standard format
@@ -47,7 +47,7 @@ MPSE demands certain characteristics of input data. The data must be tab-delimit
 - seq_status - sequencing status (0=not sequenced, 1=sequenced)
 - diagnostic - diagnosis status (0=not diagnostic, 1=diagnostic)
 - incidental - incidental finding (0=no, 1=yes)
-- hpo - semicolon-delimited list of hpo terms
+- codes - semicolon-delimited list of hpo terms
     - ex. "HP:0000001;HP:0000002;HP:0000003"
 
 There is an exception for prospective data, when *seq_status*, *diagnostic*, and *incidental* features may be unavailable or not applicable. Any additional features will be ignored by MPSE.
@@ -55,7 +55,7 @@ There is an exception for prospective data, when *seq_status*, *diagnostic*, and
 
 ## Output File Format
 Output files are made by appending 7 new fields to the original input files. These fields are:
-- hpo_clean - list of hpo terms with all parent terms removed (terminal terms retained)
+- codes_clean - list of hpo terms with all parent terms removed (terminal terms retained)
 - neg_proba - predicted probability data comes from negative class (not sequenced)
 - pos_proba - predicted probability data comes from positive class (sequenced)
 - neg_log_proba - natural log of neg_proba

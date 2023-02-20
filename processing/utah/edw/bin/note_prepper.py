@@ -7,6 +7,8 @@ import json
 import argparse
 import pypandoc
 
+csv.field_size_limit(sys.maxsize)
+
 
 def argue():
 	parser = argparse.ArgumentParser()
