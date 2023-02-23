@@ -1,16 +1,7 @@
 data/rady/
 data/utah/
 
-processing/rady/*.tsv
-processing/utah/*.tsv
-processing/rady/ALL_ADMITS_EXP/data_views/
-processing/rady/SEQ_ADMITS/data_views/
-
-processing/utah/edw/docs
-processing/utah/edw/json
-processing/utah/edw/output
-processing/utah/edw/tsv
-processing/utah/edw/testing
+processing/
 
 analysis/
 
