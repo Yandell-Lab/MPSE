@@ -174,7 +174,7 @@ def get_col_pos(data, col_names):
     return idx_dic
 
 
-def hpo_parse(hpo_str):
+def parse_hpo(hpo_str):
     """Parses and formats an HPO code from a string.
 
     Args:
@@ -261,7 +261,7 @@ def clean_codes(codes, keep_others=False):
     return hpo_clean + icd_clean + other_clean
 
 
-def compliant(data, dataset_name, col_idx, check_cols=None, keep_all_codes=False):
+def make_compliant(data, dataset_name, col_idx, check_cols=None, keep_all_codes=False):
     """Performs data compliance checks and modifications on the provided dataset.
 
     Args:
@@ -427,6 +427,42 @@ def score_probands(mod, valid_X):
     return np.hstack((probas, log_probas, classes, scrs[:, np.newaxis]))
 
 
+def process_prospective(mod, keep_terms, header, args):
+    """Processes and scores prospective data using the provided model.
+
+    Args:
+        mod (object): The model for scoring the prospective data.
+        keep_terms (list): A list of terms to keep in the processed data.
+        header (list): The header row for the output data.
+        args (ArgumentParser): The command line arguments.
+
+    Returns:
+        tuple: A tuple containing the processed prospective data, the processed prospective features, and the output data.
+    """
+    if args.Rady:
+        raw = ready(args.prospective, delim=",", drop_header=True)
+        cde_lst = [parse_hpo(x[0]) for x in raw]
+        prosp = [["pid","codes"], [path.basename(args.prospective), ";".join(cde_lst)]]
+    else:
+        prosp = ready(args.prospective)
+
+    prosp_col_idx = get_col_pos(prosp, ["pid","codes"])
+
+    if args.timestamps:
+        prosp = extract_timestamps(prosp, prosp_col_idx)
+
+    if args.fudge_terms != 0:
+        prosp = fudge_terms(prosp, prosp_col_idx, keep_terms, args.fudge_terms)
+    prosp = make_compliant(prosp, "prosp_data", prosp_col_idx, False)
+
+    df_concat = [onehot_encode(prosp), pd.DataFrame(columns=keep_terms)]
+    prosp_X = pd.concat(df_concat)[keep_terms].fillna(0).astype("int8")
+
+    prosp_preds = score_probands(mod, prosp_X)
+    prosp_out = [x+y for x,y in zip(prosp, [header] + prosp_preds.tolist())]
+    return prosp, prosp_X, prosp_out
+
+
 def rocy(preds, outcome):
     """Computes the Receiver Operating Characteristic (ROC) curve and the Area Under the Curve (AUC).
 
@@ -563,6 +599,7 @@ def main():
     args = parser.parse_args()
     check_args(parser)
     _ = Ontology()
+    preds_header = ["neg_proba","pos_proba","neg_log_proba","pos_log_proba","class","scr"]
 
     if not path.isdir(args.outdir):
         mkdir(args.outdir)
@@ -571,29 +608,7 @@ def main():
         mod = load(args.model)
         keep_terms = mod.feature_names_in_
 
-        if args.Rady:
-            raw = ready(args.prospective, delim=",", drop_header=True)
-            cde_lst = [hpo_parse(x[0]) for x in raw]
-            prosp = [["pid","codes"], [path.basename(args.prospective), ";".join(cde_lst)]]
-        else:
-            prosp = ready(args.prospective)
-
-        prosp_col_idx = get_col_pos(prosp, ["pid","codes"])
-
-        if args.timestamps:
-            prosp = extract_timestamps(prosp, prosp_col_idx)
-
-        if args.fudge_terms != 0:
-            prosp = fudge_terms(prosp, prosp_col_idx, keep_terms, args.fudge_terms)
-        prosp = compliant(prosp, "prosp_data", prosp_col_idx, False)
-
-        df_concat = [onehot_encode(prosp), pd.DataFrame(columns=keep_terms)]
-        prosp_X = pd.concat(df_concat)[keep_terms].fillna(0).astype("int8")
-
-        prosp_preds = score_probands(mod, prosp_X)
-        preds_header = ["neg_proba","pos_proba","neg_log_proba","pos_log_proba","class","scr"]
-        prosp_out = [x+y for x,y in zip(prosp, [preds_header] + prosp_preds.tolist())]
-
+        prosp, prosp_X, prosp_out = process_prospective(mod, keep_terms, preds_header, args)
         prosp_writer = csv.writer(sys.stdout, delimiter="\t")
         prosp_writer.writerows(prosp_out)
 
@@ -609,7 +624,7 @@ def main():
         train = ready(args.training)
         col_pos_names = ["pid","seq_status","diagnostic","codes"]
         train_col_idx = get_col_pos(train, col_pos_names)
-        train = compliant(train, 
+        train = make_compliant(train, 
                 "train_data", 
                 train_col_idx, 
                 ["seq_status","diagnostic"],
@@ -626,7 +641,6 @@ def main():
 
         train_scores, train_preds = training(train_X, train_y)
         #rocy(train_preds, train_y)
-        preds_header = ["neg_proba","pos_proba","neg_log_proba","pos_log_proba","class","scr"]
         train_out = [x+y for x,y in zip(train, [preds_header] + train_preds.tolist())] 
 
         writey(train_out, path.join(args.outdir, 
@@ -638,28 +652,7 @@ def main():
             dump(fit, path.join(args.outdir, "trained_model.pickle"))
 
         if args.prospective:
-            if args.Rady:
-                raw = ready(args.prospective, delim=",", drop_header=True)
-                cde_lst = [hpo_parse(x[0]) for x in raw]
-                prosp = [["pid","codes"], [path.basename(args.prospective), ";".join(cde_lst)]]
-            else:
-                prosp = ready(args.prospective)
-
-            prosp_col_idx = get_col_pos(prosp, ["pid","codes"])
-
-            if args.timestamps:
-                prosp = extract_timestamps(prosp, prosp_col_idx)
-
-            if args.fudge_terms != 0:
-                prosp = fudge_terms(prosp, prosp_col_idx, keep_terms, args.fudge_terms)
-            prosp = compliant(prosp, "prosp_data", prosp_col_idx, False)
-
-            df_concat = [onehot_encode(prosp), pd.DataFrame(columns=keep_terms)]
-            prosp_X = pd.concat(df_concat)[keep_terms].fillna(0).astype("int8")
-
-            prosp_preds = score_probands(fit, prosp_X)
-            prosp_out = [x+y for x,y in zip(prosp, [preds_header] + prosp_preds.tolist())]
-
+            prosp, prosp_X, prosp_out = process_prospective(fit, keep_terms, preds_header, args)
             prosp_writer = csv.writer(sys.stdout, delimiter="\t")
             prosp_writer.writerows(prosp_out)
 
@@ -683,7 +676,6 @@ def main():
         fname = path.join(args.outdir, "prospective_preds.json")
         with open(fname, "w") as json_out:
             json.dump(JSON, json_out, indent=4)
-    
 
 
 if __name__ == "__main__":
