@@ -160,7 +160,7 @@ def writey(data, ftag, header=None, delim="\t"):
     return True
 
 
-def get_col_pos(data, col_names):
+def get_column_positions(data, col_names):
     """Returns a dictionary mapping column names to their corresponding indices in the data.
 
     Args:
@@ -178,14 +178,14 @@ def parse_hpo(hpo_str):
     """Parses and formats an HPO code from a string.
 
     Args:
-        hpo_str (str): A string containing an HPO code in the format 'hp#######'.
+        hpo_str (str): A string containing an HPO code with variable formatting.
 
     Returns:
         str: The parsed and formatted HPO code in the format 'HP:#######'.
     """
-    hpo_reg = re.compile(r"hp\d{7}")
-    srch = hpo_reg.search(hpo_str).group()
-    return srch.replace("hp", "HP:", 1)
+    pattern = r'(?i)([hp]{2}):?(\d{7})'
+    replacement = r'HP:\2'
+    return re.sub(pattern, replacement, hpo_str)
 
 
 def extract_timestamps(data, col_idx):
@@ -200,25 +200,28 @@ def extract_timestamps(data, col_idx):
     """
     extract = [data[0] + ["manifest_date"]]
     for row in data[1:]:
-        tmsp = row[col_idx["codes"]].split(";")
-        tmsp = [(date.fromisoformat(x.split("|")[1]), x.split("|")[0]) for x in tmsp]
+        if row[col_idx["codes"]] != "":
+            tmsp = row[col_idx["codes"]].split(";")
+            tmsp = [(date.fromisoformat(x.split("|")[1]), x.split("|")[0]) for x in tmsp]
 
-        d = defaultdict(set)
-        for k, v in tmsp:
-            d[k].add(v)
+            d = defaultdict(set)
+            for k, v in tmsp:
+                d[k].add(v)
 
-        dsort = sorted(d.items())
-        previous = set()
-        for k, v in dsort:
-            new_row = row + [k.isoformat()]
-            new_cde = v | previous
-            new_row[col_idx["codes"]] = ";".join(list(new_cde))
-            extract.append(new_row)
-            previous = new_cde
+            dsort = sorted(d.items())
+            previous = set()
+            for k, v in dsort:
+                new_row = row + [k.isoformat()]
+                new_cde = v | previous
+                new_row[col_idx["codes"]] = ";".join(list(new_cde))
+                extract.append(new_row)
+                previous = new_cde
+        else:
+            extract.append(row + [""])
     return extract
 
 
-def child_terms(hpo_lst):
+def remove_parent_terms(hpo_lst):
     """Retrieves the most specific HPO term of each subtree.
 
     Args:
@@ -255,7 +258,7 @@ def clean_codes(codes, keep_others=False):
             icd.append(cm.add_dot(cde))
         else:
             other.append(cde)
-    hpo_clean = child_terms(hpo)
+    hpo_clean = remove_parent_terms(hpo)
     icd_clean = sorted(icd)
     other_clean = sorted(other) if keep_others else []
     return hpo_clean + icd_clean + other_clean
@@ -274,6 +277,9 @@ def make_compliant(data, dataset_name, col_idx, check_cols=None, keep_all_codes=
     Returns:
         list: The modified dataset after performing compliance checks and modifications.
     """
+    # remove rows with no codes
+    data = [row for row in data if row[col_idx["codes"]] != ""]
+
     # check identifiers are unique
     ids = [x[col_idx["pid"]] for x in data[1:]]
     if len(ids) != len(set(ids)):
@@ -288,8 +294,9 @@ def make_compliant(data, dataset_name, col_idx, check_cols=None, keep_all_codes=
                 if row[col_idx[col]] == "":
                     row[col_idx[col]] = "0"
                 elif row[col_idx[col]] not in ["0","1"]:
-                    msg = "{0}: non-compliant value for column '{1}'\nAborting..."
-                    sys.exit(msg.format(dataset_name, col))
+                    msg = "{0}: non-compliant value for column '{1}'; must be '0' or '1'"
+                    raise ValueError(msg.format(dataset_name, col))
+                    #sys.exit(msg.format(dataset_name, col))
     
     # order code list and remove duplicate codes
     # clean codes
@@ -446,7 +453,7 @@ def process_prospective(mod, keep_terms, header, args):
     else:
         prosp = ready(args.prospective)
 
-    prosp_col_idx = get_col_pos(prosp, ["pid","codes"])
+    prosp_col_idx = get_column_positions(prosp, ["pid","codes"])
 
     if args.timestamps:
         prosp = extract_timestamps(prosp, prosp_col_idx)
@@ -623,7 +630,7 @@ def main():
     else:
         train = ready(args.training)
         col_pos_names = ["pid","seq_status","diagnostic","codes"]
-        train_col_idx = get_col_pos(train, col_pos_names)
+        train_col_idx = get_column_positions(train, col_pos_names)
         train = make_compliant(train, 
                 "train_data", 
                 train_col_idx, 
@@ -665,14 +672,14 @@ def main():
                         header=["pid","domain","term_id","term_name","coef"])
 
 #   if args.FHIR:
-#       resources = build_resources(prosp_out, get_col_pos(prosp_out, ["pid","scr"]))
+#       resources = build_resources(prosp_out, get_column_positions(prosp_out, ["pid","scr"]))
 #       for obs in resources:
 #           fname = path.join(args.outdir, "{0}_FHIR.json".format(obs["identifier"][0]["value"]))
 #           with open(fname, "w") as json_out:
 #               json.dump(obs, json_out)
 
     if args.prospective and args.json:
-        JSON = build_JSON(prosp_out, get_col_pos(prosp_out, ["pid","scr"]), cards)
+        JSON = build_JSON(prosp_out, get_column_positions(prosp_out, ["pid","scr"]), cards)
         fname = path.join(args.outdir, "prospective_preds.json")
         with open(fname, "w") as json_out:
             json.dump(JSON, json_out, indent=4)
