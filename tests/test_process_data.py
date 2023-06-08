@@ -14,8 +14,10 @@ def example_codes():
     # 806-0 LOINC
     # RX10359383 RxNorm
     # I70.501 ICD-10-CM (with dot)
-    # C84Z0 ICD-10-CM (without dot)
+    # HP:0001182 HPO (tapered finger)
+    # HP:0001166 HPO (arachnodactyly)
     # HP:9999999 HPO (invalid code)
+    # C84Z0 ICD-10-CM (without dot)
     return ["806-0","RX10359383","I70.501","HP:0001182","HP:0001166","HP:9999999","C84Z0"]
 
 
@@ -44,15 +46,16 @@ def test_extract_timestamps():
     col_idx = {"pid": 0, "codes": 1}
     # extract = [["pid","codes","abc","manifest_date"],
     #            ["id1","HP:0000001","a","2000-01-01"],
-    #            ["id1","HP:0000002;HP:0000001","a","2000-01-02"],
+    #            ["id1","HP:0000002;HP:0000001","a","2000-01-02"], ## order of codes is non-deterministic
     #            ["id2","HP:0000003","b","2000-01-03"],
     #            ["id3","","c",""]]
-    # assert extract_timestamps(data, col_idx) == extract
     extract = extract_timestamps(data, col_idx)
     assert len(extract) == 5
     assert extract[0] == ["pid","codes","abc","manifest_date"]
     assert extract[1][1] == "HP:0000001"
+    assert len(extract[2][1]) == 21
     assert extract[2][3] == "2000-01-02"
+    assert extract[3][2] == "b"
     assert extract[4][3] == ""
 
 
@@ -61,7 +64,7 @@ def test_remove_parent_terms(hponto):
     assert remove_parent_terms(terms) == ["HP:0001166","HP:0001182"]
 
 
-def test_clean_codes(hponto, example_codes):
+def test_clean_codes_with_keep_others(hponto, example_codes):
     assert clean_codes(example_codes, True) == ["HP:0001166",
                                                 "HP:0001182",
                                                 "C84.Z0",
@@ -69,6 +72,9 @@ def test_clean_codes(hponto, example_codes):
                                                 "806-0",
                                                 "HP:9999999",
                                                 "RX10359383"]
+
+
+def test_clean_codes_no_keep_others(hponto, example_codes):
     assert clean_codes(example_codes, False) == ["HP:0001166",
                                                  "HP:0001182",
                                                  "C84.Z0",
