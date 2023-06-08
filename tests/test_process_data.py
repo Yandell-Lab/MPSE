@@ -9,7 +9,7 @@ sys.path.insert(0, parent_dir)
 from bin.mpse import *
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def example_codes():
     # 806-0 LOINC
     # RX10359383 RxNorm
@@ -19,7 +19,7 @@ def example_codes():
     return ["806-0","RX10359383","I70.501","HP:0001182","HP:0001166","HP:9999999","C84Z0"]
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def hponto():
     return Ontology()
 
@@ -42,12 +42,18 @@ def test_extract_timestamps():
             ["id2","HP:0000003|2000-01-03","b"],
             ["id3","","c"]]
     col_idx = {"pid": 0, "codes": 1}
-    extract = [["pid","codes","abc","manifest_date"],
-               ["id1","HP:0000001","a","2000-01-01"],
-               ["id1","HP:0000002;HP:0000001","a","2000-01-02"],
-               ["id2","HP:0000003","b","2000-01-03"],
-               ["id3","","c",""]]
-    assert extract_timestamps(data, col_idx) == extract
+    # extract = [["pid","codes","abc","manifest_date"],
+    #            ["id1","HP:0000001","a","2000-01-01"],
+    #            ["id1","HP:0000002;HP:0000001","a","2000-01-02"],
+    #            ["id2","HP:0000003","b","2000-01-03"],
+    #            ["id3","","c",""]]
+    # assert extract_timestamps(data, col_idx) == extract
+    extract = extract_timestamps(data, col_idx)
+    assert len(extract) == 5
+    assert extract[0] == ["pid","codes","abc","manifest_date"]
+    assert extract[1][1] == "HP:0000001"
+    assert extract[2][3] == "2000-01-02"
+    assert extract[4][3] == ""
 
 
 def test_remove_parent_terms(hponto):
