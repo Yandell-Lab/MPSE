@@ -19,16 +19,23 @@ from datetime import datetime as dt
 from datetime import timezone as tz
 
 from collections import defaultdict
+from joblib import dump, load
 
 import numpy as np
 import pandas as pd
 from scipy.stats import binom_test
 from matplotlib import pyplot as plt
 
-from sklearn.model_selection import LeaveOneOut, cross_validate, cross_val_predict
-from sklearn.naive_bayes import BernoulliNB
+from sklearn.model_selection import KFold, StratifiedKFold, LeaveOneOut
+from sklearn.model_selection import cross_validate, cross_val_predict
 from sklearn import metrics
-from joblib import dump, load
+
+from sklearn.naive_bayes import BernoulliNB
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.svm import SVC
 
 csv.field_size_limit(sys.maxsize)
 
@@ -49,6 +56,9 @@ def argue():
     parser.add_argument("-p", "--prospective",
             required=False,
             help="Prospective data in standard format.")
+    parser.add_argument("--compare_models", 
+            action="store_true",
+            help="Train & test input data using multiple classifiers.")
     parser.add_argument("--timestamps", 
             action="store_true",
             help="Input features have associated timestamps.")
@@ -414,6 +424,57 @@ def training(X, y, mod=BernoulliNB(), cv=LeaveOneOut()):
     return scores, np.hstack((probas, log_probas, classes, scrs[:, np.newaxis]))
 
 
+def run_multimodels(X_train, y_train, X_test, y_test=None):
+    """Runs multiple classification models and evaluates their performance using cross-validation.
+
+    Args:
+        X_train (array-like): Training data features.
+        y_train (array-like): Training data labels.
+        X_test (array-like): Test data features.
+        y_test (array-like): Test data labels.
+
+    Returns:
+        pandas.DataFrame: Concatenated results of the cross-validation evaluation for each model.
+    """
+    dfs = []
+    models = [ 
+        ('LogReg', LogisticRegression()),
+        ('DT', DecisionTreeClassifier()),
+        ('RF', RandomForestClassifier()),
+        ('KNN', KNeighborsClassifier()),
+        ('SVM', SVC()),
+        ('BNB', BernoulliNB()),
+        ('GBM', GradientBoostingClassifier())
+    ]
+    results = []
+    names = []
+    #scoring = ['accuracy', 'precision_weighted', 'recall_weighted', 'f1_weighted', 'roc_auc']
+    #scoring = ['accuracy', 'precision', 'recall', 'f1', 'roc_auc']
+    scoring = {"accuracy": "accuracy",
+            "precision": metrics.make_scorer(metrics.precision_score, pos_label="1"),
+            "recall": metrics.make_scorer(metrics.recall_score, pos_label="1"),
+            "f1": metrics.make_scorer(metrics.f1_score, pos_label="1"),
+            "auc": "roc_auc"
+            }
+    target_names = ["0", "1"]
+    for name, model in models:
+        #kfold = KFold(n_splits=5, shuffle=True, random_state=1234)
+        skfold = StratifiedKFold(n_splits=3, shuffle=True, random_state=1234)
+        #loocv = LeaveOneOut()
+        cv_results = cross_validate(model, X_train, y_train, cv=skfold, scoring=scoring)
+        clf = model.fit(X_train, y_train)
+        y_pred = clf.predict(X_test)
+        print(name)
+        print(metrics.classification_report(y_test, y_pred, target_names=target_names))
+        results.append(cv_results)
+        names.append(name)
+        this_df = pd.DataFrame(cv_results)
+        this_df["model"] = name
+        dfs.append(this_df)
+    final = pd.concat(dfs, ignore_index=True)
+    return final
+
+
 def score_probands(mod, valid_X):
     """Scores probands using the trained model and returns the predicted probabilities and scores.
 
@@ -659,17 +720,28 @@ def main():
             dump(fit, path.join(args.outdir, "trained_model.pickle"))
 
         if args.prospective:
-            prosp, prosp_X, prosp_out = process_prospective(fit, keep_terms, preds_header, args)
-            prosp_writer = csv.writer(sys.stdout, delimiter="\t")
-            prosp_writer.writerows(prosp_out)
+            if args.compare_models:
+                prosp = ready(args.prospective)
+                prosp_col_idx = get_column_positions(prosp, ["pid","codes","seq_status"])
+                prosp = make_compliant(prosp, "prosp_data", prosp_col_idx, False)
+                df_concat = [onehot_encode(prosp), pd.DataFrame(columns=keep_terms)]
+                prosp_X = pd.concat(df_concat)[keep_terms].fillna(0).astype("int8")
+                prosp_y = np.array([x[prosp_col_idx["seq_status"]] for x in prosp[1:]])
+                model_comparison = run_multimodels(train_X, train_y, prosp_X, prosp_y)
+                print(model_comparison)
+                sys.exit()
+            else:
+                prosp, prosp_X, prosp_out = process_prospective(fit, keep_terms, preds_header, args)
+                prosp_writer = csv.writer(sys.stdout, delimiter="\t")
+                prosp_writer.writerows(prosp_out)
 
-            if args.Cardinal:
-                coefs = fit.feature_log_prob_
-                prosp_pid = [x[0] for x in prosp[1:]]
-                cards = get_cardinal(prosp_pid, prosp_X, coefs[1] - coefs[0])
-                writey(cards, 
-                        path.join(args.outdir, "cardinal_phenotypes.tsv"), 
-                        header=["pid","domain","term_id","term_name","coef"])
+                if args.Cardinal:
+                    coefs = fit.feature_log_prob_
+                    prosp_pid = [x[0] for x in prosp[1:]]
+                    cards = get_cardinal(prosp_pid, prosp_X, coefs[1] - coefs[0])
+                    writey(cards, 
+                            path.join(args.outdir, "cardinal_phenotypes.tsv"), 
+                            header=["pid","domain","term_id","term_name","coef"])
 
 #   if args.FHIR:
 #       resources = build_resources(prosp_out, get_column_positions(prosp_out, ["pid","scr"]))
