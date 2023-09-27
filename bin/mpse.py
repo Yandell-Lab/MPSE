@@ -447,10 +447,11 @@ def run_multimodels(X_train, y_train, X_test, y_test=None):
         ('DT', DecisionTreeClassifier()),
         ('RF', RandomForestClassifier()),
         ('KNN', KNeighborsClassifier()),
-        ('SVM', SVC()),
-        ('BNB', BernoulliNB()),
+        #('SVM', SVC()),
+        ('SVM', SVC(probability=True)),
         ('GBM', GradientBoostingClassifier()),
-        ('MLP', MLPClassifier())
+        ('MLP', MLPClassifier()),
+        ('BNB', BernoulliNB())
     ]
     results = []
     names = []
@@ -470,8 +471,10 @@ def run_multimodels(X_train, y_train, X_test, y_test=None):
         cv_results = cross_validate(model, X_train, y_train, cv=skfold, scoring=scoring)
         clf = model.fit(X_train, y_train)
         y_pred = clf.predict(X_test)
+        y_score = clf.predict_proba(X_test)[:,1]
         print(name)
         print(metrics.classification_report(y_test, y_pred, target_names=target_names))
+        print(metrics.roc_auc_score(y_test, y_score))
         print(metrics.confusion_matrix(y_test, y_pred))
         print()
         results.append(cv_results)
