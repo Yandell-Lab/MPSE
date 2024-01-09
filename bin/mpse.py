@@ -10,7 +10,7 @@ import csv
 import re
 
 from pyhpo.ontology import Ontology
-from pyhpo.set import HPOSet
+from pyhpo.set import BasicHPOSet
 import simple_icd_10_cm as cm
 #from fhir.resources.observation import Observation
 
@@ -34,6 +34,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.neighbors import KNeighborsClassifier
+from sklearn.neural_network import MLPClassifier
 from sklearn.svm import SVC
 
 csv.field_size_limit(sys.maxsize)
@@ -239,11 +240,15 @@ def remove_parent_terms(hpo_lst):
     Returns:
         list: A sorted list of child terms' IDs.
     """
-    hpo_set = HPOSet.from_queries(hpo_lst)
-    hpo_subset = hpo_set.child_nodes()
-    subset_dic = hpo_subset.toJSON()
-    out_str = sorted([x["id"] for x in subset_dic])
-    return out_str
+    # BasicHPOSet does the following:
+    # -removes parent terms
+    # -removes modifier terms
+    # -replaces obsolete terms
+    hpo_set = BasicHPOSet.from_queries(hpo_lst)
+    #hpo_subset = hpo_set.child_nodes()
+    hpo_dic = hpo_set.toJSON()
+    hpo_str = sorted([x["id"] for x in hpo_dic])
+    return hpo_str
 
 
 def clean_codes(codes, keep_others=False):
@@ -441,9 +446,11 @@ def run_multimodels(X_train, y_train, X_test, y_test=None):
         ('DT', DecisionTreeClassifier()),
         ('RF', RandomForestClassifier()),
         ('KNN', KNeighborsClassifier()),
-        ('SVM', SVC()),
-        ('BNB', BernoulliNB()),
-        ('GBM', GradientBoostingClassifier())
+        #('SVM', SVC()),
+        ('SVM', SVC(probability=True)),
+        ('GBM', GradientBoostingClassifier()),
+        ('MLP', MLPClassifier()),
+        ('BNB', BernoulliNB())
     ]
     results = []
     names = []
@@ -463,12 +470,17 @@ def run_multimodels(X_train, y_train, X_test, y_test=None):
         cv_results = cross_validate(model, X_train, y_train, cv=skfold, scoring=scoring)
         clf = model.fit(X_train, y_train)
         y_pred = clf.predict(X_test)
+        y_score = clf.predict_proba(X_test)[:,1]
         print(name)
         print(metrics.classification_report(y_test, y_pred, target_names=target_names))
+        print(metrics.roc_auc_score(y_test, y_score))
+        print(metrics.confusion_matrix(y_test, y_pred))
+        print()
         results.append(cv_results)
         names.append(name)
         this_df = pd.DataFrame(cv_results)
         this_df["model"] = name
+        this_df.drop(columns=["fit_time","score_time"], inplace=True)
         dfs.append(this_df)
     final = pd.concat(dfs, ignore_index=True)
     return final
