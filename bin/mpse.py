@@ -24,7 +24,6 @@ from joblib import dump, load
 import numpy as np
 import pandas as pd
 from scipy.stats import binom_test
-from matplotlib import pyplot as plt
 
 from sklearn.model_selection import KFold, StratifiedKFold, LeaveOneOut
 from sklearn.model_selection import cross_validate, cross_val_predict
