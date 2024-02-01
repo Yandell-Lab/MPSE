@@ -59,6 +59,9 @@ def argue():
     parser.add_argument("--compare_models", 
             action="store_true",
             help="Train & test input data using multiple classifiers.")
+    parser.add_argument("--keep_all_codes",
+            action="store_true",
+            help="Keep non-vocabulary codes.")
     parser.add_argument("--timestamps", 
             action="store_true",
             help="Input features have associated timestamps.")
@@ -532,7 +535,7 @@ def process_prospective(mod, keep_terms, header, args):
 
     if args.fudge_terms != 0:
         prosp = fudge_terms(prosp, prosp_col_idx, keep_terms, args.fudge_terms)
-    prosp = make_compliant(prosp, "prosp_data", prosp_col_idx, False)
+    prosp = make_compliant(prosp, "prosp_data", prosp_col_idx, args.keep_all_codes)
 
     df_concat = [onehot_encode(prosp), pd.DataFrame(columns=keep_terms)]
     prosp_X = pd.concat(df_concat)[keep_terms].fillna(0).astype("int8")
@@ -707,7 +710,7 @@ def main():
                 "train_data", 
                 train_col_idx, 
                 ["seq_status","diagnostic"],
-                False)
+                args.keep_all_codes)
 
         if args.alpha != 1.0:
             train_X, keep_terms, drop_terms = select_features(train, train_col_idx, args.alpha)
@@ -726,6 +729,8 @@ def main():
             "training_preds_ba{0}_sf{1}.tsv".format(args.alpha, args.sample_features)))
 
         fit = BernoulliNB().fit(train_X, train_y)
+        coefficients = pd.concat([pd.DataFrame(train_X.columns), pd.DataFrame(np.transpose(fit.feature_log_prob_))], axis = 1)
+        coefficients.to_csv(path.join(args.outdir, "model_coefficients_pd.tsv"), sep="\t", header=["term","log_prob_0","log_prob_1"], index=False)
 
         if args.Pickle:
             dump(fit, path.join(args.outdir, "trained_model.pickle"))
@@ -734,7 +739,7 @@ def main():
             if args.compare_models:
                 prosp = ready(args.prospective)
                 prosp_col_idx = get_column_positions(prosp, ["pid","codes","seq_status"])
-                prosp = make_compliant(prosp, "prosp_data", prosp_col_idx, False)
+                prosp = make_compliant(prosp, "prosp_data", prosp_col_idx, args.keep_all_codes)
                 df_concat = [onehot_encode(prosp), pd.DataFrame(columns=keep_terms)]
                 prosp_X = pd.concat(df_concat)[keep_terms].fillna(0).astype("int8")
                 prosp_y = np.array([x[prosp_col_idx["seq_status"]] for x in prosp[1:]])
