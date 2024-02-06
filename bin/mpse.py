@@ -570,14 +570,16 @@ def main():
         train_y = np.array([x[train_col_idx["seq_status"]] for x in train[1:]])
 
         train_scores, train_preds = training(train_X, train_y)
-        #rocy(train_preds, train_y)
+        # rocy(train_preds, train_y)
         train_out = [x+y for x,y in zip(train, [preds_header] + train_preds.tolist())] 
-
         writey(train_out, path.join(args.outdir, "training_preds.tsv"))
 
         fit = BernoulliNB().fit(train_X, train_y)
-        coefficients = pd.concat([pd.DataFrame(train_X.columns), pd.DataFrame(np.transpose(fit.feature_log_prob_))], axis = 1)
-        coefficients.to_csv(path.join(args.outdir, "model_coefficients.tsv"), sep="\t", header=["term","log_prob_0","log_prob_1"], index=False)
+        mod_attr = pd.concat([pd.DataFrame(fit.feature_names_in_).rename(columns={0:"terms"}),
+                              pd.DataFrame(np.transpose(fit.feature_count_)).rename(columns={0:"ctrl_cnt", 1:"case_cnt"}),
+                              pd.DataFrame(np.transpose(fit.feature_log_prob_)).rename(columns={0:"ctrl_log_prob", 1:"case_log_prob"})], axis = 1)
+        mod_attr["coef"] = mod_attr["case_log_prob"] - mod_attr["ctrl_log_prob"]
+        mod_attr.to_csv(path.join(args.outdir, "feature_coefficients.tsv"), sep="\t", index=False)
 
         if args.Pickle:
             dump(fit, path.join(args.outdir, "trained_model.pickle"))
