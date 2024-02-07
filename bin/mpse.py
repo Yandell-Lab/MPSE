@@ -579,6 +579,8 @@ def main():
                               pd.DataFrame(np.transpose(fit.feature_count_)).rename(columns={0:"ctrl_cnt", 1:"case_cnt"}),
                               pd.DataFrame(np.transpose(fit.feature_log_prob_)).rename(columns={0:"ctrl_log_prob", 1:"case_log_prob"})], axis = 1)
         mod_attr["coef"] = mod_attr["case_log_prob"] - mod_attr["ctrl_log_prob"]
+        mod_attr["ctrl_n"] = fit.class_count_[0]
+        mod_attr["case_n"] = fit.class_count_[1]
         mod_attr.to_csv(path.join(args.outdir, "feature_coefficients.tsv"), sep="\t", index=False)
 
         if args.Pickle:
