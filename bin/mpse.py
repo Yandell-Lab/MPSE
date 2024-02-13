@@ -199,7 +199,7 @@ def remove_parent_terms(hpo_lst):
     return hpo_str
 
 
-def clean_codes(codes, keep_others=False):
+def clean_codes(codes, valid_hpo, keep_others=False):
     """Basic pre-processing of input codes in preparation for modeling.
 
     Args:
@@ -209,7 +209,6 @@ def clean_codes(codes, keep_others=False):
     Returns:
         list: A filtered list of codes.
     """
-    valid_hpo = Ontology.to_dataframe().index.tolist()
     hpo = []
     icd= []
     other = []
@@ -226,7 +225,16 @@ def clean_codes(codes, keep_others=False):
     return hpo_clean + icd_clean + other_clean
 
 
-def make_compliant(data, dataset_name, col_idx, check_cols=None, keep_all_codes=False):
+def annotate_codes(cde, valid_hpo):
+    if cde in valid_hpo:
+        return Ontology.get_hpo_object(cde).name
+    elif cm.is_valid_item(cde):
+        return cm.get_description(cde)
+    else:
+        return "other"
+
+
+def make_compliant(data, valid_hpo, dataset_name, col_idx, check_cols=None, keep_all_codes=False):
     """Performs data compliance checks and modifications on the provided dataset.
 
     Args:
@@ -265,7 +273,7 @@ def make_compliant(data, dataset_name, col_idx, check_cols=None, keep_all_codes=
     data[0].append("codes_clean")
     for row in data[1:]:
         dirty = sorted(set(row[col_idx["codes"]].split(";")))
-        clean = clean_codes(dirty, keep_others=keep_all_codes)
+        clean = clean_codes(dirty, valid_hpo, keep_others=keep_all_codes)
         row[col_idx["codes"]] = ";".join(dirty)
         row.append(";".join(clean))
     return data
@@ -422,7 +430,7 @@ def process_prospective(mod, keep_terms, header, args):
     if args.timestamps:
         prosp = extract_timestamps(prosp, prosp_col_idx)
 
-    prosp = make_compliant(prosp, "prosp_data", prosp_col_idx, args.keep_all_codes)
+    prosp = make_compliant(prosp, valid_hpo, "prosp_data", prosp_col_idx, args.keep_all_codes)
 
     df_concat = [onehot_encode(prosp), pd.DataFrame(columns=keep_terms)]
     prosp_X = pd.concat(df_concat)[keep_terms].fillna(0).astype("int8")
@@ -534,6 +542,7 @@ def main():
     parser = argue()
     args = parser.parse_args()
     _ = Ontology()
+    valid_hpo = Ontology.to_dataframe().index.tolist()
     preds_header = ["neg_proba","pos_proba","neg_log_proba","pos_log_proba","class","scr"]
 
     if not path.isdir(args.outdir):
@@ -560,6 +569,7 @@ def main():
         col_pos_names = ["pid","seq_status","diagnostic","codes"]
         train_col_idx = get_column_positions(train, col_pos_names)
         train = make_compliant(train, 
+                valid_hpo,
                 "train_data", 
                 train_col_idx, 
                 ["seq_status","diagnostic"],
@@ -575,12 +585,13 @@ def main():
         writey(train_out, path.join(args.outdir, "training_preds.tsv"))
 
         fit = BernoulliNB().fit(train_X, train_y)
-        mod_attr = pd.concat([pd.DataFrame(fit.feature_names_in_).rename(columns={0:"terms"}),
+        mod_attr = pd.concat([pd.DataFrame(fit.feature_names_in_).rename(columns={0:"codes"}),
                               pd.DataFrame(np.transpose(fit.feature_count_)).rename(columns={0:"ctrl_cnt", 1:"case_cnt"}),
                               pd.DataFrame(np.transpose(fit.feature_log_prob_)).rename(columns={0:"ctrl_log_prob", 1:"case_log_prob"})], axis = 1)
         mod_attr["coef"] = mod_attr["case_log_prob"] - mod_attr["ctrl_log_prob"]
         mod_attr["ctrl_n"] = fit.class_count_[0]
         mod_attr["case_n"] = fit.class_count_[1]
+        mod_attr["code_descrip"] = mod_attr["codes"].apply(annotate_codes, valid_hpo=valid_hpo)
         mod_attr.to_csv(path.join(args.outdir, "feature_coefficients.tsv"), sep="\t", index=False)
 
         if args.Pickle:
@@ -590,7 +601,7 @@ def main():
             if args.compare_models:
                 prosp = ready(args.prospective)
                 prosp_col_idx = get_column_positions(prosp, ["pid","codes","seq_status"])
-                prosp = make_compliant(prosp, "prosp_data", prosp_col_idx, args.keep_all_codes)
+                prosp = make_compliant(prosp, valid_hpo, "prosp_data", prosp_col_idx, args.keep_all_codes)
                 df_concat = [onehot_encode(prosp), pd.DataFrame(columns=keep_terms)]
                 prosp_X = pd.concat(df_concat)[keep_terms].fillna(0).astype("int8")
                 prosp_y = np.array([x[prosp_col_idx["seq_status"]] for x in prosp[1:]])
