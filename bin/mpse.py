@@ -365,7 +365,7 @@ def run_multimodels(X_train, y_train, X_test, y_test=None):
     target_names = ["0", "1"]
     for name, model in models:
         #kfold = KFold(n_splits=5, shuffle=True, random_state=1234)
-        skfold = StratifiedKFold(n_splits=3, shuffle=True, random_state=1234)
+        skfold = StratifiedKFold(n_splits=8, shuffle=True, random_state=1234)
         #loocv = LeaveOneOut()
         cv_results = cross_validate(model, X_train, y_train, cv=skfold, scoring=scoring)
         clf = model.fit(X_train, y_train)
@@ -383,7 +383,8 @@ def run_multimodels(X_train, y_train, X_test, y_test=None):
         this_df.drop(columns=["fit_time","score_time"], inplace=True)
         dfs.append(this_df)
     final = pd.concat(dfs, ignore_index=True)
-    return final
+    aggregate = final.groupby("model").agg([np.mean, np.std])
+    return aggregate
 
 
 def score_probands(mod, valid_X):
@@ -406,7 +407,7 @@ def score_probands(mod, valid_X):
     return np.hstack((probas, log_probas, classes, scrs[:, np.newaxis]))
 
 
-def process_prospective(mod, keep_terms, header, args):
+def process_prospective(mod, valid_hpo, keep_terms, header, args):
     """Processes and scores prospective data using the provided model.
 
     Args:
@@ -552,7 +553,7 @@ def main():
         mod = load(args.model)
         keep_terms = mod.feature_names_in_
 
-        prosp, prosp_X, prosp_out = process_prospective(mod, keep_terms, preds_header, args)
+        prosp, prosp_X, prosp_out = process_prospective(mod, valid_hpo, keep_terms, preds_header, args)
         prosp_writer = csv.writer(sys.stdout, delimiter="\t")
         prosp_writer.writerows(prosp_out)
 
@@ -601,15 +602,15 @@ def main():
             if args.compare_models:
                 prosp = ready(args.prospective)
                 prosp_col_idx = get_column_positions(prosp, ["pid","codes","seq_status"])
-                prosp = make_compliant(prosp, valid_hpo, "prosp_data", prosp_col_idx, args.keep_all_codes)
+                prosp = make_compliant(prosp, valid_hpo, "prosp_data", prosp_col_idx, ["seq_status"], args.keep_all_codes)
                 df_concat = [onehot_encode(prosp), pd.DataFrame(columns=keep_terms)]
                 prosp_X = pd.concat(df_concat)[keep_terms].fillna(0).astype("int8")
                 prosp_y = np.array([x[prosp_col_idx["seq_status"]] for x in prosp[1:]])
                 model_comparison = run_multimodels(train_X, train_y, prosp_X, prosp_y)
-                print(model_comparison)
+                print(model_comparison.to_string())
                 sys.exit()
             else:
-                prosp, prosp_X, prosp_out = process_prospective(fit, keep_terms, preds_header, args)
+                prosp, prosp_X, prosp_out = process_prospective(fit, valid_hpo, keep_terms, preds_header, args)
                 prosp_writer = csv.writer(sys.stdout, delimiter="\t")
                 prosp_writer.writerows(prosp_out)
 
