@@ -41,6 +41,7 @@ def test_score_probands(training_data):
 
 def test_process_prospective(training_data, tmp_path):
     _ = Ontology()
+    valid_hpo = Ontology.to_dataframe().index.tolist()
     model = BernoulliNB()
     model.fit(training_data[0], training_data[1])
 
@@ -59,10 +60,11 @@ def test_process_prospective(training_data, tmp_path):
     parser.add_argument("-R", "--Rady", action="store_true", default=False)
     parser.add_argument("-p", "--prospective")
     parser.add_argument("--timestamps", action="store_true", default=False)
-    parser.add_argument("--fudge_terms", type=int, default=0)
-    args = parser.parse_args(["--prospective", str(temp_file)])
+    parser.add_argument("--vars", action="append", default=[])
+    parser.add_argument("--keep_all_codes", action="store_true", default=False)
+    args = parser.parse_args(["--prospective", str(temp_file), "--keep_all_codes"])
 
-    prosp, prosp_X, prosp_out = process_prospective(model, keep_terms, header, args)
+    prosp, prosp_X, prosp_out = process_prospective(model, valid_hpo, keep_terms, header, args)
 
     assert isinstance(prosp, list)
     assert len(prosp) == 4

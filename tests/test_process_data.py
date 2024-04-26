@@ -65,23 +65,35 @@ def test_remove_parent_terms(hponto):
 
 
 def test_clean_codes_with_keep_others(hponto, example_codes):
-    assert clean_codes(example_codes, True) == ["HP:0001166",
-                                                "HP:0001182",
-                                                "C84.Z0",
-                                                "I70.501",
-                                                "806-0",
-                                                "HP:9999999",
-                                                "RX10359383"]
+    valid_hpo = Ontology.to_dataframe().index.tolist()
+    expected = ["HP:0001166", "HP:0001182", "C84.Z0", "I70.501",
+                "806-0", "HP:9999999", "RX10359383"]
+    assert clean_codes(example_codes, valid_hpo, True) == expected
 
 
 def test_clean_codes_no_keep_others(hponto, example_codes):
-    assert clean_codes(example_codes, False) == ["HP:0001166",
-                                                 "HP:0001182",
-                                                 "C84.Z0",
-                                                 "I70.501"]
+    valid_hpo = Ontology.to_dataframe().index.tolist()
+    expected = ["HP:0001166", "HP:0001182", "C84.Z0", "I70.501"]
+    assert clean_codes(example_codes, valid_hpo, False) == expected
+
+
+def test_annotate_codes(hponto, example_codes):
+    valid_hpo = Ontology.to_dataframe().index.tolist()
+    annos = []
+    for cde in example_codes:
+        annos.append(annotate_codes(cde, valid_hpo, add_vars=[]))
+    expected = ["other",
+                "other",
+                "Unspecified atherosclerosis of nonautologous biological bypass graft(s) of the extremities, right leg",
+                "Tapered finger",
+                "Arachnodactyly",
+                "other",
+                "Other mature T/NK-cell lymphomas, unspecified site"]
+    assert annos == expected
 
 
 def test_compliant_data(hponto, example_codes):
+    valid_hpo = Ontology.to_dataframe().index.tolist()
     data = [["pid","diagnostic","codes","abc"],
             ["id1","1",";".join(example_codes),"a"],
             ["id2","","HP:0001167;HP:0001167","b"]]
@@ -90,26 +102,31 @@ def test_compliant_data(hponto, example_codes):
     expected = [["pid","diagnostic","codes","abc","codes_clean"],
                 ["id1","1",";".join(sorted(set(example_codes))),"a","HP:0001166;HP:0001182;C84.Z0;I70.501"],
                 ["id2","0","HP:0001167","b","HP:0001167"]]
-    assert make_compliant(data, dataset_name, col_idx, ["diagnostic"], False) == expected
+    assert make_compliant(data, valid_hpo, dataset_name, col_idx, ["diagnostic"], False) == expected
 
 
 def test_non_compliant_data(example_codes):
+    valid_hpo = Ontology.to_dataframe().index.tolist()
     data = [["pid","diagnostic","codes","abc"],
             ["id1","*",";".join(example_codes),"a"],
             ["id2","","HP:0001167;HP:0001167","b"]]
     dataset_name = "my_non_compliant_data"
     col_idx = {"pid": 0, "diagnostic": 1, "codes": 2}
     with pytest.raises(ValueError):
-        make_compliant(data, dataset_name, col_idx, ["diagnostic"], False)
+        make_compliant(data, valid_hpo, dataset_name, col_idx, ["diagnostic"], False)
 
 
 def test_onehot_encode():
-    data = [["pid","abc","codes_clean"],
-            ["id1","aaa","HP:0000001"],
-            ["id2","bbb","HP:0000001;HP:0000002"],
-            ["id3","ccc","HP:0000002;HP:0000003"]]
-    expected = pd.DataFrame([[1,0,0],[1,1,0],[0,1,1]], columns=["HP:0000001","HP:0000002","HP:0000003"])
-    assert onehot_encode(data).equals(expected)
+    data = [["pid","abc","codes_clean","cov"],
+            ["id1","aaa","HP:0000001",1],
+            ["id2","bbb","HP:0000001;HP:0000002",1],
+            ["id3","ccc","HP:0000002;HP:0000003",1]]
+    expected = pd.DataFrame([[1,0,0],[1,1,0],[0,1,1]],
+                            columns=["HP:0000001","HP:0000002","HP:0000003"])
+    expected_cov = pd.DataFrame([[1,0,0,1],[1,1,0,1],[0,1,1,1]],
+                                columns=["HP:0000001","HP:0000002","HP:0000003","cov"])
+    assert onehot_encode(data, add_vars=[]).equals(expected)
+    assert onehot_encode(data, add_vars=["cov"]).equals(expected_cov)
 
 
 if __name__ == "__main__":

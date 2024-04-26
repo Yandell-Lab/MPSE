@@ -5,7 +5,8 @@ import sys
 import csv 
 import json
 import argparse
-from os import mkdir
+#from os import mkdir
+from os import makedirs
 import os.path as path
 
 import simple_icd_10_cm as cm
@@ -61,6 +62,10 @@ def argue():
     parser.add_argument("--timestamps", 
             action="store_true",
             help="Input features have associated timestamps.")
+    parser.add_argument("-v", "--vars",
+            action="append",
+            default=[],
+            help="Optional covariate to add to the model. This option can be specified multiple times.")
     parser.add_argument("-R", "--Rady",
             action="store_true",
             help="Prospective data comes from Rady Clinithink process.")
@@ -225,11 +230,13 @@ def clean_codes(codes, valid_hpo, keep_others=False):
     return hpo_clean + icd_clean + other_clean
 
 
-def annotate_codes(cde, valid_hpo):
+def annotate_codes(cde, valid_hpo, add_vars=[]):
     if cde in valid_hpo:
         return Ontology.get_hpo_object(cde).name
     elif cm.is_valid_item(cde):
         return cm.get_description(cde)
+    elif cde in add_vars:
+        return "covariate"
     else:
         return "other"
 
@@ -279,7 +286,7 @@ def make_compliant(data, valid_hpo, dataset_name, col_idx, check_cols=None, keep
     return data
 
 
-def onehot_encode(data):
+def onehot_encode(data, add_vars=[]):
     """Performs one-hot encoding on the 'codes_clean' column of the provided data.
 
     Args:
@@ -290,6 +297,8 @@ def onehot_encode(data):
     """
     df = pd.DataFrame(data[1:], columns=data[0])
     onehot = df["codes_clean"].str.get_dummies(sep=";")
+    if add_vars != []:
+        onehot[add_vars] = df[add_vars]
     return onehot
 
 
@@ -387,18 +396,18 @@ def run_multimodels(X_train, y_train, X_test, y_test=None):
     return aggregate
 
 
-def score_probands(mod, valid_X):
+def score_probands(mod, prosp_X):
     """Scores probands using the trained model and returns the predicted probabilities and scores.
 
     Args:
         mod (object): The trained classifier model.
-        valid_X (array-like): The feature matrix of the probands to be scored.
+        prosp_X (array-like): The feature matrix of the probands to be scored.
 
     Returns:
         array-like: The concatenated results including predicted probabilities, log probabilities, predicted classes, and scores.
     """
-    probas = mod.predict_proba(valid_X)
-    log_probas = mod.predict_log_proba(valid_X)
+    probas = mod.predict_proba(prosp_X)
+    log_probas = mod.predict_log_proba(prosp_X)
 
     y_uniq = mod.classes_
     indices = np.argmax(probas, axis=1)
@@ -431,9 +440,14 @@ def process_prospective(mod, valid_hpo, keep_terms, header, args):
     if args.timestamps:
         prosp = extract_timestamps(prosp, prosp_col_idx)
 
-    prosp = make_compliant(prosp, valid_hpo, "prosp_data", prosp_col_idx, args.keep_all_codes)
+    prosp = make_compliant(prosp,
+                           valid_hpo,
+                           "prosp_data",
+                           prosp_col_idx,
+                           check_cols=None,
+                           keep_all_codes=args.keep_all_codes)
 
-    df_concat = [onehot_encode(prosp), pd.DataFrame(columns=keep_terms)]
+    df_concat = [onehot_encode(prosp, add_vars=args.vars), pd.DataFrame(columns=keep_terms)]
     prosp_X = pd.concat(df_concat)[keep_terms].fillna(0).astype("int8")
 
     prosp_preds = score_probands(mod, prosp_X)
@@ -547,13 +561,15 @@ def main():
     preds_header = ["neg_proba","pos_proba","neg_log_proba","pos_log_proba","class","scr"]
 
     if not path.isdir(args.outdir):
-        mkdir(args.outdir)
+        makedirs(args.outdir)
     
     if args.model:
         mod = load(args.model)
         keep_terms = mod.feature_names_in_
 
         prosp, prosp_X, prosp_out = process_prospective(mod, valid_hpo, keep_terms, preds_header, args)
+        print(prosp)
+        sys.exit()
         prosp_writer = csv.writer(sys.stdout, delimiter="\t")
         prosp_writer.writerows(prosp_out)
 
@@ -573,10 +589,10 @@ def main():
                 valid_hpo,
                 "train_data", 
                 train_col_idx, 
-                ["seq_status","diagnostic"],
-                args.keep_all_codes)
+                check_cols=["seq_status","diagnostic"],
+                keep_all_codes=args.keep_all_codes)
 
-        train_X = onehot_encode(train)
+        train_X = onehot_encode(train, add_vars=args.vars)
         keep_terms = train_X.columns
         train_y = np.array([x[train_col_idx["seq_status"]] for x in train[1:]])
 
@@ -592,7 +608,7 @@ def main():
         mod_attr["coef"] = mod_attr["case_log_prob"] - mod_attr["ctrl_log_prob"]
         mod_attr["ctrl_n"] = fit.class_count_[0]
         mod_attr["case_n"] = fit.class_count_[1]
-        mod_attr["code_descrip"] = mod_attr["codes"].apply(annotate_codes, valid_hpo=valid_hpo)
+        mod_attr["code_descrip"] = mod_attr["codes"].apply(annotate_codes, valid_hpo=valid_hpo, add_vars=args.vars)
         mod_attr.to_csv(path.join(args.outdir, "feature_coefficients.tsv"), sep="\t", index=False)
 
         if args.Pickle:
@@ -602,8 +618,13 @@ def main():
             if args.compare_models:
                 prosp = ready(args.prospective)
                 prosp_col_idx = get_column_positions(prosp, ["pid","codes","seq_status"])
-                prosp = make_compliant(prosp, valid_hpo, "prosp_data", prosp_col_idx, ["seq_status"], args.keep_all_codes)
-                df_concat = [onehot_encode(prosp), pd.DataFrame(columns=keep_terms)]
+                prosp = make_compliant(prosp,
+                                       valid_hpo,
+                                       "prosp_data",
+                                       prosp_col_idx,
+                                       check_cols=["seq_status"],
+                                       keep_all_codes=args.keep_all_codes)
+                df_concat = [onehot_encode(prosp, add_vars=args.vars), pd.DataFrame(columns=keep_terms)]
                 prosp_X = pd.concat(df_concat)[keep_terms].fillna(0).astype("int8")
                 prosp_y = np.array([x[prosp_col_idx["seq_status"]] for x in prosp[1:]])
                 model_comparison = run_multimodels(train_X, train_y, prosp_X, prosp_y)
