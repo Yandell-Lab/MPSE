@@ -448,7 +448,7 @@ def process_prospective(mod, valid_hpo, keep_terms, header, args):
                            keep_all_codes=args.keep_all_codes)
 
     df_concat = [onehot_encode(prosp, add_vars=args.vars), pd.DataFrame(columns=keep_terms)]
-    prosp_X = pd.concat(df_concat)[keep_terms].fillna(0).astype("int8")
+    prosp_X = pd.concat(df_concat)[keep_terms].fillna(0)
 
     prosp_preds = score_probands(mod, prosp_X)
     prosp_out = [x+y for x,y in zip(prosp, [header] + prosp_preds.tolist())]
@@ -568,8 +568,6 @@ def main():
         keep_terms = mod.feature_names_in_
 
         prosp, prosp_X, prosp_out = process_prospective(mod, valid_hpo, keep_terms, preds_header, args)
-        print(prosp)
-        sys.exit()
         prosp_writer = csv.writer(sys.stdout, delimiter="\t")
         prosp_writer.writerows(prosp_out)
 
@@ -583,13 +581,13 @@ def main():
 
     else:
         train = ready(args.training)
-        col_pos_names = ["pid","seq_status","diagnostic","codes"]
+        col_pos_names = ["pid","seq_status","codes"]
         train_col_idx = get_column_positions(train, col_pos_names)
         train = make_compliant(train, 
                 valid_hpo,
                 "train_data", 
                 train_col_idx, 
-                check_cols=["seq_status","diagnostic"],
+                check_cols=["seq_status"],
                 keep_all_codes=args.keep_all_codes)
 
         train_X = onehot_encode(train, add_vars=args.vars)
@@ -597,6 +595,7 @@ def main():
         train_y = np.array([x[train_col_idx["seq_status"]] for x in train[1:]])
 
         train_scores, train_preds = training(train_X, train_y)
+
         # rocy(train_preds, train_y)
         train_out = [x+y for x,y in zip(train, [preds_header] + train_preds.tolist())] 
         writey(train_out, path.join(args.outdir, "training_preds.tsv"))
