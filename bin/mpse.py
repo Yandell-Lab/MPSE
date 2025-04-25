@@ -5,7 +5,6 @@ import sys
 import csv 
 import json
 import argparse
-#from os import mkdir
 from os import makedirs
 import os.path as path
 
@@ -484,7 +483,7 @@ def get_cardinal(pid, data, feature_probs):
               Each sublist contains the patient ID, feature type, feature code, feature name, and feature probability.
     """
     term_names = data.columns
-    valid_hpo = Ontology.to_dataframe().index.tolist()
+    valid_hpo = [x.id for x in Ontology]
     cards = []
     for idx, row in data.iterrows():#.tolist():
         boolpt = list(map(bool, row))
@@ -557,7 +556,7 @@ def main():
     parser = argue()
     args = parser.parse_args()
     _ = Ontology()
-    valid_hpo = Ontology.to_dataframe().index.tolist()
+    valid_hpo = [x.id for x in Ontology]
     preds_header = ["neg_proba","pos_proba","neg_log_proba","pos_log_proba","class","scr"]
 
     if not path.isdir(args.outdir):
