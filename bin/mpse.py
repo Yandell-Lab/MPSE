@@ -447,7 +447,7 @@ def process_prospective(mod, valid_hpo, keep_terms, header, args):
                            keep_all_codes=args.keep_all_codes)
 
     df_concat = [onehot_encode(prosp, add_vars=args.vars), pd.DataFrame(columns=keep_terms)]
-    prosp_X = pd.concat(df_concat)[keep_terms].fillna(0)
+    prosp_X = pd.concat(df_concat)[keep_terms].convert_dtypes().fillna(0)
 
     prosp_preds = score_probands(mod, prosp_X)
     prosp_out = [x+y for x,y in zip(prosp, [header] + prosp_preds.tolist())]
@@ -623,7 +623,7 @@ def main():
                                        check_cols=["seq_status"],
                                        keep_all_codes=args.keep_all_codes)
                 df_concat = [onehot_encode(prosp, add_vars=args.vars), pd.DataFrame(columns=keep_terms)]
-                prosp_X = pd.concat(df_concat)[keep_terms].fillna(0).astype("int8")
+                prosp_X = pd.concat(df_concat)[keep_terms].convert_dtypes().fillna(0)
                 prosp_y = np.array([x[prosp_col_idx["seq_status"]] for x in prosp[1:]])
                 model_comparison = run_multimodels(train_X, train_y, prosp_X, prosp_y)
                 print(model_comparison.to_string())
