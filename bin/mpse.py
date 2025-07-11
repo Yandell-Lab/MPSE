@@ -230,6 +230,16 @@ def clean_codes(codes, valid_hpo, keep_others=False):
 
 
 def annotate_codes(cde, valid_hpo, add_vars=[]):
+    """Annotate a code based on its source.
+
+    Args:
+        cde (str): The code to annotate. Could be an HPO term, ICD diagnosis code, specific covariate, or 'other'.
+        valid_hpo (list): A collection of valid HPO codes. If `cde` is found here, it is treated as an HPO term.
+        add_vars (list, optional): A list of additional covariate variable names. If `cde` is in this list, it is annotated as a covariate.
+    
+    Returns:
+        str: A code's name or 'annotation'
+    """
     if cde in valid_hpo:
         return Ontology.get_hpo_object(cde).name
     elif cm.is_valid_item(cde):
