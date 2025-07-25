@@ -10,6 +10,7 @@ The following core parameters are available while executing mpse.py
 - -C,  --Cardinal ... Return cardinal phenotypes for prospective data
 - -P,  --Pickle ... Dump pickled model object to file
 - -o,  --outdir ... Output directory for results and reports
+
 See usage statement for complete list of CLI parameters.
 
 
