@@ -10,6 +10,7 @@ The following core parameters are available while executing mpse.py
 - -C,  --Cardinal ... Return cardinal phenotypes for prospective data
 - -P,  --Pickle ... Dump pickled model object to file
 - -o,  --outdir ... Output directory for results and reports
+See usage statement for complete list of CLI parameters.
 
 
 ## Example Commands
@@ -45,12 +46,11 @@ MPSE demands certain characteristics of input data. The data must be tab-delimit
 
 - pid - unique observation identifier
 - seq_status - sequencing status (0=not sequenced, 1=sequenced)
-- diagnostic - diagnosis status (0=not diagnostic, 1=diagnostic)
-- incidental - incidental finding (0=no, 1=yes)
 - codes - semicolon-delimited list of hpo terms
-    - ex. "HP:0000001;HP:0000002;HP:0000003"
+    - default: "HP:0000001;HP:0000002;HP:0000003"
+    - timestamped: "HP:0000001|2000-01-01;HP:0000002|2000-01-02;HP:0000003|2000-01-03"
 
-There is an exception for prospective data, when *seq_status*, *diagnostic*, and *incidental* features may be unavailable or not applicable. Any additional features will be ignored by MPSE.
+There is an exception for prospective data, when *seq_status* may be unavailable or not applicable. Any additional features will be retained in the output file.
 
 
 ## Output File Format

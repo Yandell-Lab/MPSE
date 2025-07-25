@@ -9,3 +9,5 @@ analysis/
 slurmjob*
 *.snakemake
 *__pycache__
+
+.venv

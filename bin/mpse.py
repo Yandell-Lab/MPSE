@@ -60,11 +60,11 @@ def argue():
             help="Keep non-vocabulary codes.")
     parser.add_argument("--timestamps", 
             action="store_true",
-            help="Input features have associated timestamps.")
+            help="Input features have associated timestamps. If specified, 'codes' field in prospective data should have the format 'HP:#######|yyyy-mm-dd;HP:#######|yyyy-mm-dd'.")
     parser.add_argument("-v", "--vars",
             action="append",
             default=[],
-            help="Optional covariate to add to the model. This option can be specified multiple times.")
+            help="Optional binary covariate to add to the model. This option can be specified multiple times.")
     parser.add_argument("-R", "--Rady",
             action="store_true",
             help="Prospective data comes from Rady Clinithink process.")
