@@ -65,6 +65,9 @@ def argue():
             action="append",
             default=[],
             help="Optional binary covariate to add to the model. This option can be specified multiple times.")
+    parser.add_argument("-c", "--correct_scores",
+            action="store_true",
+            help="Optional binary covariate to add to the model. This option can be specified multiple times.")
     parser.add_argument("-R", "--Rady",
             action="store_true",
             help="Prospective data comes from Rady Clinithink process.")
@@ -405,23 +408,57 @@ def run_multimodels(X_train, y_train, X_test, y_test=None):
     return aggregate
 
 
-def score_probands(mod, prosp_X):
-    """Scores probands using the trained model and returns the predicted probabilities and scores.
+def score_probands(mod, prosp_X, new_feats=None, correct_scores=False):
+    """
+    Scores probands using a trained BernoulliNB model and applies
+    a correction in log-odds space for unseen (new) features.
 
     Args:
-        mod (object): The trained classifier model.
-        prosp_X (array-like): The feature matrix of the probands to be scored.
+        mod (object): Trained BernoulliNB classifier.
+        prosp_X (array-like): Known-feature matrix for the probands.
+        new_feats (array-like, optional): Binary matrix (n_samples × n_new_features)
+            indicating unseen features. 1 = feature present.
 
     Returns:
-        array-like: The concatenated results including predicted probabilities, log probabilities, predicted classes, and scores.
+        np.ndarray: Concatenated results including:
+            [proba_0, proba_1, log_proba_0, log_proba_1, predicted_class, score]
     """
+    # --- Base predictions from the model ---
     probas = mod.predict_proba(prosp_X)
     log_probas = mod.predict_log_proba(prosp_X)
 
+    # --- Compute correction weight from average feature log-odds ---
+    if hasattr(mod, "feature_log_prob_") and mod.feature_log_prob_.shape[0] == 2:
+        log_prob = mod.feature_log_prob_
+        #avg_weight = np.mean(np.abs(log_prob[1, :] - log_prob[0, :]))
+        avg_weight = np.mean(log_prob[1, :] - log_prob[0, :])
+    else:
+        avg_weight = 0.0  # fallback (e.g., non-binary or no attribute)
+
+    # --- Apply correction in log-odds space if new_feats provided ---
+    if correct_scores and new_feats is not None and avg_weight != 0.0:
+        num_new = np.sum(new_feats, axis=1)
+
+        # Convert probabilities → log-odds
+        log_odds = np.log(probas[:, 1] / probas[:, 0])
+
+        # Apply correction (positive shift increases odds for class 1)
+        log_odds += avg_weight * num_new
+
+        # Convert back to probabilities
+        probas[:, 1] = 1 / (1 + np.exp(-log_odds))
+        probas[:, 0] = 1 - probas[:, 1]
+
+        # Recompute log probabilities
+        log_probas = np.log(probas)
+
+    # --- Derive classes and scores (log-odds) ---
     y_uniq = mod.classes_
     indices = np.argmax(probas, axis=1)
     classes = np.expand_dims(y_uniq[indices], axis=1)
-    scrs = np.log(probas[:,1] / probas[:,0])
+    scrs = np.log(probas[:, 1] / probas[:, 0])
+
+    # --- Return in same structure as before ---
     return np.hstack((probas, log_probas, classes, scrs[:, np.newaxis]))
 
 
@@ -459,7 +496,14 @@ def process_prospective(mod, valid_hpo, keep_terms, header, args):
     df_concat = [onehot_encode(prosp, add_vars=args.vars), pd.DataFrame(columns=keep_terms)]
     prosp_X = pd.concat(df_concat)[keep_terms].convert_dtypes().fillna(0)
 
-    prosp_preds = score_probands(mod, prosp_X)
+    if args.correct_scores:
+        new_onehot = onehot_encode(prosp)
+        new_terms = [col for col in new_onehot.columns if col not in keep_terms and col not in args.vars]
+        new_feats = new_onehot[new_terms].convert_dtypes().fillna(0)
+        prosp_preds = score_probands(mod, prosp_X, new_feats=new_feats, correct_scores=True)
+    else:
+        prosp_preds = score_probands(mod, prosp_X)
+
     prosp_out = [x+y for x,y in zip(prosp, [header] + prosp_preds.tolist())]
     return prosp, prosp_X, prosp_out
 
